@@ -44,6 +44,7 @@ function saveSettings() {
 export async function onActivate() {
     settings = getSettings();
     registerSlashCommand();
+    addToolbarButton();
     console.log(`${EXTENSION_NAME} activated`);
 }
 
@@ -58,6 +59,39 @@ function registerSlashCommand() {
         },
         helpString: 'Open the Persona Generator extension',
     }));
+}
+
+function addToolbarButton() {
+    const dataBankButton = document.querySelector('[data-tooltip="Open Data Bank"]') || 
+                           document.querySelector('button[title="Open Data Bank"]');
+    
+    if (!dataBankButton) {
+        console.log('Data Bank button not found, trying alternative selectors...');
+        const allButtons = document.querySelectorAll('.drawer-toggle, .fa-database, [class*="databank"]');
+        for (const btn of allButtons) {
+            if (btn.textContent.includes('Data Bank') || btn.getAttribute('data-tooltip')?.includes('Data Bank')) {
+                insertButtonAfter(btn);
+                return;
+            }
+        }
+        console.log('Could not find Data Bank button. Extension will still work via slash command.');
+        return;
+    }
+    
+    insertButtonAfter(dataBankButton);
+}
+
+function insertButtonAfter(existingButton) {
+    const buttonContainer = existingButton.parentElement;
+    
+    const personaButton = document.createElement('button');
+    personaButton.className = existingButton.className;
+    personaButton.title = 'Open Persona Generator';
+    personaButton.setAttribute('data-tooltip', 'Open Persona Generator');
+    personaButton.innerHTML = '<i class="fa-solid fa-user-plus"></i><span class="drawer-toggle-text">Open Persona Generator</span>';
+    personaButton.addEventListener('click', () => openPersonaGeneratorPopup());
+    
+    existingButton.insertAdjacentElement('afterend', personaButton);
 }
 
 function openPersonaGeneratorPopup() {
