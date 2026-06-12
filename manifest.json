@@ -1,0 +1,17 @@
+{
+    "display_name": "Persona Generator",
+    "loading_order": 10,
+    "requires": [],
+    "optional": [],
+    "dependencies": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "rafaelramalheteagls-cmd",
+    "version": "1.0.0",
+    "homePage": "https://github.com/rafaelramalheteagls-cmd/sillytavern-extension-persona-generator",
+    "auto_update": true,
+    "minimum_client_version": "1.0.0",
+    "hooks": {
+        "activate": "onActivate"
+    }
+}

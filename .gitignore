@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node modules
+node_modules/
+
+# Logs
+*.log

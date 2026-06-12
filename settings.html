@@ -1,0 +1,60 @@
+<div class="persona-generator-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>Persona Generator</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="persona-gen-settings-block">
+                <label for="persona_gen_style">Default Prompt Style:</label>
+                <select id="persona_gen_style">
+                    <option value="Narrative">Narrative</option>
+                    <option value="Structured" selected>Structured</option>
+                    <option value="Profile">Profile</option>
+                    <option value="Dialogue">Dialogue</option>
+                </select>
+            </div>
+
+            <div class="persona-gen-settings-block">
+                <label for="persona_gen_person">Default Person:</label>
+                <select id="persona_gen_person">
+                    <option value="First person" selected>First person</option>
+                    <option value="Third person">Third person</option>
+                </select>
+            </div>
+
+            <div class="persona-gen-settings-block">
+                <label for="persona_gen_gender">Default Gender:</label>
+                <select id="persona_gen_gender">
+                    <option value="Male" selected>Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                    <option value="Not specified">Not specified</option>
+                </select>
+            </div>
+
+            <div class="persona-gen-settings-block">
+                <label for="persona_gen_age">Default Age:</label>
+                <input id="persona_gen_age" type="text" value="25" />
+            </div>
+
+            <div class="persona-gen-settings-block">
+                <label for="persona_gen_species">Default Species:</label>
+                <input id="persona_gen_species" type="text" value="Human" />
+            </div>
+
+            <div class="persona-gen-settings-block">
+                <button id="persona_gen_open" class="menu_button">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <span>Open Persona Generator</span>
+                </button>
+            </div>
+
+            <div class="persona-gen-settings-block">
+                <small>
+                    Use <code>/persona-gen</code> slash command to open the generator.
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
