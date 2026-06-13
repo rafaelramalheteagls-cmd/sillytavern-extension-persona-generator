@@ -523,9 +523,13 @@ async function handleSave(popup) {
         formData.append('overwrite_name', avatarId);
         
         // Upload the avatar using the correct endpoint
+        // Only include CSRF token - FormData sets Content-Type automatically
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
         const uploadResponse = await fetch('/uploaduseravatar', {
             method: 'POST',
-            headers: getRequestHeaders(),
+            headers: {
+                'X-CSRF-Token': csrfToken,
+            },
             body: formData,
         });
         
