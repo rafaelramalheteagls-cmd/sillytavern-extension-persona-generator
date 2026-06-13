@@ -519,18 +519,16 @@ async function handleSave(popup) {
             await context.executeSlashCommandsWithOptions(createCmd);
         }
         
-        // Set description after creation using /persona-update
+        // Set description after creation using /persona-update with pipe
         await new Promise(r => setTimeout(r, 300));
         
         if (context.executeSlashCommandsWithOptions && personaText) {
-            // Truncate and sanitize description for slash command safety
             const maxLen = 4000;
-            let desc = personaText.length > maxLen ? personaText.substring(0, maxLen) : personaText;
-            // Replace newlines with literal \n for the command parser
-            desc = desc.replace(/\n/g, '\\n');
-            const updateCmd = `/persona-update persona=${finalName} description=${desc}`;
-            console.log('Setting persona description');
-            await context.executeSlashCommandsWithOptions(updateCmd);
+            const desc = personaText.length > maxLen ? personaText.substring(0, maxLen) : personaText;
+            // Use pipe to pass multi-line description safely
+            const updateCmd = `/persona-update persona=${finalName} description={{pipe}}`;
+            console.log('Setting persona description via pipe');
+            await context.executeSlashCommandsWithOptions(updateCmd, { pipes: [desc] });
         }
         
         console.log('Persona created:', { name: finalName });
