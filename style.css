@@ -268,6 +268,13 @@
 }
 
 /* Left Sidebar Toolbar Button */
+.persona-gen-toolbar-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 4px 0;
+}
+
 .persona-gen-toolbar-btn {
     display: flex;
     align-items: center;
@@ -275,7 +282,6 @@
     width: 40px;
     height: 40px;
     padding: 0;
-    margin: 4px 0;
     background: #1a1a2e;
     border: 1px solid #2d2d44;
     border-radius: 8px;
@@ -290,7 +296,7 @@
     border-color: #e94560;
 }
 
-.persona-gen-toolbar-icon {
+.persona-gen-toolbar-btn i {
     font-size: 18px;
     display: flex;
     align-items: center;

@@ -481,18 +481,18 @@ function handleCopy(popup) {
 }
 
 function addToolbarButton() {
-    // Try multiple selectors to find the toolbar container
+    // Find the toolbar container - look for the sidebar with utility buttons
     const selectors = [
-        '#send_button_wrapper',
-        '.toolbar',
+        '#utilities-toggle',
+        '.drawer-opener',
         '#extensions_menu',
-        '#left-nav-panel',
-        '.drawer-content',
-        '#top-bar',
-        'body'
+        '#send_button_wrapper',
+        '.toolbar'
     ];
     
     let targetContainer = null;
+    let insertMethod = 'append';
+    
     for (const selector of selectors) {
         const el = document.querySelector(selector);
         if (el) {
@@ -507,23 +507,42 @@ function addToolbarButton() {
         return;
     }
     
-    // Create toolbar button
+    // Create toolbar button matching SillyTavern's style
     const toolbarBtn = document.createElement('div');
     toolbarBtn.id = 'persona-gen-toolbar-btn';
-    toolbarBtn.className = 'persona-gen-toolbar-btn';
-    toolbarBtn.innerHTML = `
-        <div class="persona-gen-toolbar-icon fa-solid fa-user-plus" title="Persona Generator"></div>
-    `;
-    toolbarBtn.addEventListener('click', () => openPersonaGeneratorPopup());
+    toolbarBtn.className = 'persona-gen-toolbar-btn menu_button menu_button_icon';
+    toolbarBtn.title = 'Persona Generator';
+    toolbarBtn.innerHTML = `<i class="fa-solid fa-user-plus"></i>`;
+    toolbarBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPersonaGeneratorPopup();
+    });
     
-    // Try to insert after a specific element, or just append
-    const openDataBank = document.querySelector('[data-i18n="Open Data Bank"]') || 
-                         document.querySelector('[title*="Data Bank"]');
-    if (openDataBank && openDataBank.parentNode) {
-        openDataBank.parentNode.insertBefore(toolbarBtn, openDataBank.nextSibling);
-        console.log(`${EXTENSION_NAME} toolbar button inserted after Data Bank`);
+    // Try to find the "Open Data Bank" button and insert after it
+    const allButtons = document.querySelectorAll('.menu_button, .drawer-opener, [title*="Data Bank"]');
+    let dataBankBtn = null;
+    
+    for (const btn of allButtons) {
+        const text = btn.textContent || btn.title || '';
+        if (text.includes('Data Bank') || text.includes('Open Data Bank')) {
+            dataBankBtn = btn;
+            break;
+        }
+    }
+    
+    if (dataBankBtn) {
+        // Insert as a new sibling element after the Data Bank button
+        const wrapper = document.createElement('div');
+        wrapper.className = 'persona-gen-toolbar-wrapper';
+        wrapper.appendChild(toolbarBtn);
+        dataBankBtn.parentNode.insertBefore(wrapper, dataBankBtn.nextSibling);
+        console.log(`${EXTENSION_NAME} toolbar button inserted after Data Bank button`);
     } else {
-        targetContainer.appendChild(toolbarBtn);
+        // Just append to the container
+        const wrapper = document.createElement('div');
+        wrapper.className = 'persona-gen-toolbar-wrapper';
+        wrapper.appendChild(toolbarBtn);
+        targetContainer.appendChild(wrapper);
         console.log(`${EXTENSION_NAME} toolbar button appended to container`);
     }
 }
