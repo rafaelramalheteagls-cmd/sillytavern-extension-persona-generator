@@ -1,15 +1,29 @@
 # SillyTavern Persona Generator Extension
 
-Generate personas from character cards using AI, directly inside SillyTavern.
+Generate and edit personas from character cards using AI, directly inside SillyTavern.
 
 ## Features
 
+- **Generate Personas** - Create personas from character cards with AI
+- **Edit Personas** - Modify existing personas with natural language requests
 - **Multiple AI Providers** - Uses SillyTavern's configured API (OpenAI, Anthropic, Groq, etc.)
 - **Auto-detect Character** - Automatically detects the current character
 - **Multiple Characters** - Select from any loaded character
 - **4 Prompt Styles** - Narrative, Structured, Profile, Dialogue
 - **Person Options** - First person or third person perspective
 - **Dark Theme** - Matches SillyTavern's dark theme
+- **Direct Integration** - Saves personas directly to SillyTavern
+
+## Screenshots
+
+### Menu Access
+![Menu](screenshots/menu.png)
+
+### Persona Generator
+![Persona Generator](screenshots/generator.png)
+
+### Edit Persona
+![Edit Persona](screenshots/edit.png)
 
 ## Installation
 
@@ -36,24 +50,34 @@ Generate personas from character cards using AI, directly inside SillyTavern.
 
 ### Via Slash Command
 
-Type `/persona-gen` in the chat input to open the Persona Generator.
+- Type `/persona-gen` in the chat input to open the Persona Generator.
+
+### Via Menu
+
+1. Click the hamburger menu (top right)
+2. Click **Edit Persona** to modify existing personas
+3. Click **Persona Generator** to create new personas
 
 ### Via Extension Settings
 
 1. Go to Extensions > Persona Generator
 2. Click "Open Persona Generator"
 
-### Via UI
-
-1. Click the extension icon in the toolbar (if available)
-
 ## How It Works
+
+### Generating a Persona
 
 1. **Select Character** - Choose which character to generate a persona for
 2. **Configure Options** - Set gender, age, species, prompt style, and person
 3. **Generate** - Click "Generate Persona" to create the persona
-4. **Save** - Download the persona as a JSON file or copy to clipboard
-5. **Import** - Import the JSON file into SillyTavern as a persona
+4. **Save** - Click "Create in SillyTavern" to save directly to SillyTavern
+
+### Editing a Persona
+
+1. **Select Persona** - Choose the persona you want to modify
+2. **Describe Changes** - Tell the AI what changes you want (e.g., "Make her a doctor", "Change age to 30")
+3. **Generate** - Click "Generate Changes" to get the modified description
+4. **Save** - Click "Save Changes" to update the persona
 
 ## Prompt Styles
 
