@@ -511,24 +511,11 @@ async function handleSave(popup) {
         ctx2d.fillRect(0, 0, 10, 10);
         const avatarDataUrl = canvas.toDataURL('image/png');
         
-        // Let /persona-create handle everything (upload + registration + UI refresh)
-        // The avatar argument accepts a data URL
+        // Use /persona-create with description via pipe
         if (context.executeSlashCommandsWithOptions) {
-            const createCmd = `/persona-create name=${finalName} select=false avatarPromptResize=false avatar=${avatarDataUrl}`;
+            const createCmd = `/persona-create name=${finalName} select=false avatarPromptResize=false avatar=${avatarDataUrl} description={{pipe}}`;
             console.log('Running persona-create for:', finalName);
-            await context.executeSlashCommandsWithOptions(createCmd);
-        }
-        
-        // Set description after creation using /persona-update with pipe
-        await new Promise(r => setTimeout(r, 300));
-        
-        if (context.executeSlashCommandsWithOptions && personaText) {
-            const maxLen = 4000;
-            const desc = personaText.length > maxLen ? personaText.substring(0, maxLen) : personaText;
-            // Use pipe to pass multi-line description safely
-            const updateCmd = `/persona-update persona=${finalName} description={{pipe}}`;
-            console.log('Setting persona description via pipe');
-            await context.executeSlashCommandsWithOptions(updateCmd, { pipes: [desc] });
+            await context.executeSlashCommandsWithOptions(createCmd, { pipes: [personaText] });
         }
         
         console.log('Persona created:', { name: finalName });
