@@ -205,8 +205,23 @@ async function handleGenerate(popup, characters, settings) {
         const character = characters[characterId];
         const prompt = buildPrompt(character, options);
 
-        const { generateQuietPrompt } = SillyTavern.getContext();
-        const result = await generateQuietPrompt({ quietPrompt: prompt });
+        const context = SillyTavern.getContext();
+        
+        // Temporarily disable persona description to prevent it from being included in the prompt
+        const savedPersonaDescription = context.powerUserSettings?.persona_description;
+        const savedPersonaDescPosition = context.powerUserSettings?.persona_description_position;
+        if (context.powerUserSettings) {
+            context.powerUserSettings.persona_description = '';
+            context.powerUserSettings.persona_description_position = 9; // 9 = NONE
+        }
+
+        const result = await context.generateQuietPrompt({ quietPrompt: prompt });
+
+        // Restore persona description
+        if (context.powerUserSettings) {
+            context.powerUserSettings.persona_description = savedPersonaDescription;
+            context.powerUserSettings.persona_description_position = savedPersonaDescPosition;
+        }
 
         resultTextarea.value = result;
         resultSection.style.display = 'block';
@@ -768,8 +783,23 @@ async function handleEditGenerate(popup, personas, personaDescriptions) {
     try {
         const prompt = buildEditPrompt(personaName, currentDescription, userRequest);
 
-        const { generateQuietPrompt } = SillyTavern.getContext();
-        const result = await generateQuietPrompt({ quietPrompt: prompt });
+        const context = SillyTavern.getContext();
+        
+        // Temporarily disable persona description to prevent it from being included in the prompt
+        const savedPersonaDescription = context.powerUserSettings?.persona_description;
+        const savedPersonaDescPosition = context.powerUserSettings?.persona_description_position;
+        if (context.powerUserSettings) {
+            context.powerUserSettings.persona_description = '';
+            context.powerUserSettings.persona_description_position = 9; // 9 = NONE
+        }
+
+        const result = await context.generateQuietPrompt({ quietPrompt: prompt });
+
+        // Restore persona description
+        if (context.powerUserSettings) {
+            context.powerUserSettings.persona_description = savedPersonaDescription;
+            context.powerUserSettings.persona_description_position = savedPersonaDescPosition;
+        }
 
         resultTextarea.value = result;
         resultSection.style.display = 'block';
