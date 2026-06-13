@@ -642,6 +642,240 @@ function handleCopy(popup) {
     });
 }
 
+function openEditPersonaPopup() {
+    const existing = document.getElementById('persona-edit-popup');
+    if (existing) existing.remove();
+
+    const { powerUserSettings } = SillyTavern.getContext();
+    const personas = powerUserSettings?.personas || {};
+    const personaDescriptions = powerUserSettings?.persona_descriptions || {};
+
+    const popup = document.createElement('div');
+    popup.id = 'persona-edit-popup';
+    popup.className = 'persona-generator-popup';
+    popup.innerHTML = buildEditPopupHTML(personas, personaDescriptions);
+
+    document.body.appendChild(popup);
+    setupEditPopupEventListeners(popup, personas, personaDescriptions);
+}
+
+function buildEditPopupHTML(personas, personaDescriptions) {
+    const personaOptions = Object.entries(personas).map(([avatarId, name]) => {
+        return `<option value="${avatarId}">${name}</option>`;
+    }).join('');
+
+    const firstAvatarId = Object.keys(personas)[0] || '';
+    const firstDescription = firstAvatarId ? (personaDescriptions[firstAvatarId]?.description || '') : '';
+
+    return `
+        <div class="persona-generator-overlay"></div>
+        <div class="persona-generator-modal">
+            <div class="persona-generator-header">
+                <h2>Edit Persona</h2>
+                <button class="persona-generator-close" id="persona-edit-close">&times;</button>
+            </div>
+            
+            <div class="persona-generator-content">
+                <div class="persona-generator-section">
+                    <label>Select Persona:</label>
+                    <select id="persona-edit-select">${personaOptions}</select>
+                </div>
+
+                <div class="persona-generator-section">
+                    <label>Current Description:</label>
+                    <textarea id="persona-edit-current" rows="6" readonly>${firstDescription}</textarea>
+                </div>
+
+                <div class="persona-generator-section">
+                    <label>Describe the changes you want:</label>
+                    <textarea id="persona-edit-request" rows="4" placeholder="Example: Make the persona more cheerful, add that she is a doctor, change age to 30..."></textarea>
+                </div>
+
+                <div class="persona-generator-actions">
+                    <button id="persona-edit-generate" class="persona-generator-btn primary">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Changes
+                    </button>
+                </div>
+
+                <div class="persona-generator-section" id="persona-edit-result-section" style="display: none;">
+                    <label>New Description:</label>
+                    <textarea id="persona-edit-result" rows="8"></textarea>
+                    <div class="persona-generator-result-actions">
+                        <button id="persona-edit-save" class="persona-generator-btn primary">
+                            <i class="fa-solid fa-save"></i> Save Changes
+                        </button>
+                        <button id="persona-edit-copy" class="persona-generator-btn secondary">
+                            <i class="fa-solid fa-copy"></i> Copy to Clipboard
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function setupEditPopupEventListeners(popup, personas, personaDescriptions) {
+    const overlay = popup.querySelector('.persona-generator-overlay');
+    const closeBtn = popup.querySelector('#persona-edit-close');
+    const select = popup.querySelector('#persona-edit-select');
+    const currentTextarea = popup.querySelector('#persona-edit-current');
+    const generateBtn = popup.querySelector('#persona-edit-generate');
+    const saveBtn = popup.querySelector('#persona-edit-save');
+    const copyBtn = popup.querySelector('#persona-edit-copy');
+
+    overlay.addEventListener('click', () => popup.remove());
+    closeBtn.addEventListener('click', () => popup.remove());
+
+    select.addEventListener('change', () => {
+        const avatarId = select.value;
+        const description = personaDescriptions[avatarId]?.description || '';
+        currentTextarea.value = description;
+        // Hide result when switching persona
+        const resultSection = popup.querySelector('#persona-edit-result-section');
+        resultSection.style.display = 'none';
+    });
+
+    generateBtn.addEventListener('click', () => handleEditGenerate(popup, personas, personaDescriptions));
+    saveBtn.addEventListener('click', () => handleEditSave(popup, personas));
+    copyBtn.addEventListener('click', () => handleEditCopy(popup));
+
+    popup.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') popup.remove();
+    });
+}
+
+async function handleEditGenerate(popup, personas, personaDescriptions) {
+    const select = popup.querySelector('#persona-edit-select');
+    const requestTextarea = popup.querySelector('#persona-edit-request');
+    const generateBtn = popup.querySelector('#persona-edit-generate');
+    const resultSection = popup.querySelector('#persona-edit-result-section');
+    const resultTextarea = popup.querySelector('#persona-edit-result');
+
+    const avatarId = select.value;
+    const currentDescription = personaDescriptions[avatarId]?.description || '';
+    const userRequest = requestTextarea.value.trim();
+    const personaName = personas[avatarId] || 'Unknown';
+
+    if (!userRequest) {
+        toastr.warning('Please describe the changes you want.');
+        return;
+    }
+
+    generateBtn.disabled = true;
+    generateBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating...';
+    resultSection.style.display = 'none';
+
+    try {
+        const prompt = buildEditPrompt(personaName, currentDescription, userRequest);
+
+        const { generateQuietPrompt } = SillyTavern.getContext();
+        const result = await generateQuietPrompt({ quietPrompt: prompt });
+
+        resultTextarea.value = result;
+        resultSection.style.display = 'block';
+
+        toastr.success('Changes generated successfully!');
+    } catch (error) {
+        console.error('Error generating changes:', error);
+        toastr.error('Failed to generate changes. Check console for details.');
+    } finally {
+        generateBtn.disabled = false;
+        generateBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Generate Changes';
+    }
+}
+
+function buildEditPrompt(personaName, currentDescription, userRequest) {
+    return `You are an expert persona editor for roleplay scenarios. You need to modify an existing persona description based on the user's request.
+
+CURRENT PERSONA NAME: ${personaName}
+
+CURRENT PERSONA DESCRIPTION:
+${currentDescription || '(No description yet)'}
+
+USER'S REQUEST:
+${userRequest}
+
+INSTRUCTIONS:
+- Apply the requested changes to the persona description
+- Keep the same writing style and format as the original
+- Maintain consistency with the existing content
+- If the request is unclear, make reasonable interpretations
+- Do NOT add any meta-commentary or explanations
+- Return ONLY the modified persona description, nothing else
+
+Generate the updated persona description:`;
+}
+
+async function handleEditSave(popup, personas) {
+    const select = popup.querySelector('#persona-edit-select');
+    const resultTextarea = popup.querySelector('#persona-edit-result');
+    const newDescription = resultTextarea.value;
+
+    if (!newDescription) {
+        toastr.warning('No changes to save. Generate changes first.');
+        return;
+    }
+
+    const avatarId = select.value;
+    const personaName = personas[avatarId] || 'Unknown';
+
+    try {
+        const context = SillyTavern.getContext();
+        const { powerUserSettings, saveSettingsDebounced, eventSource, event_types } = context;
+
+        if (powerUserSettings && powerUserSettings.persona_descriptions) {
+            if (!powerUserSettings.persona_descriptions[avatarId]) {
+                powerUserSettings.persona_descriptions[avatarId] = {};
+            }
+            powerUserSettings.persona_descriptions[avatarId].description = newDescription;
+            powerUserSettings.persona_descriptions[avatarId].position = 0;
+            powerUserSettings.persona_descriptions[avatarId].depth = 2;
+            powerUserSettings.persona_descriptions[avatarId].role = 0;
+
+            saveSettingsDebounced();
+
+            if (eventSource && event_types) {
+                eventSource.emit(event_types.PERSONA_UPDATED, avatarId);
+            }
+
+            // Update the current description display
+            const currentTextarea = popup.querySelector('#persona-edit-current');
+            currentTextarea.value = newDescription;
+
+            // Hide result section
+            const resultSection = popup.querySelector('#persona-edit-result-section');
+            resultSection.style.display = 'none';
+
+            // Refresh persona list
+            if (context.getUserAvatars) {
+                await context.getUserAvatars(true, avatarId);
+            }
+
+            toastr.success(`Persona "${personaName}" updated successfully!`);
+        }
+    } catch (error) {
+        console.error('Error saving persona:', error);
+        toastr.error('Failed to save persona changes.');
+    }
+}
+
+function handleEditCopy(popup) {
+    const resultTextarea = popup.querySelector('#persona-edit-result');
+    const text = resultTextarea.value;
+
+    if (!text) {
+        toastr.warning('No text to copy.');
+        return;
+    }
+
+    navigator.clipboard.writeText(text).then(() => {
+        toastr.success('Copied to clipboard!');
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        toastr.error('Failed to copy to clipboard.');
+    });
+}
+
 function addToolbarButton() {
     // Find the Chat Options menu (hamburger menu)
     const optionsContent = document.querySelector('.options-content');
@@ -653,7 +887,19 @@ function addToolbarButton() {
     
     console.log(`${EXTENSION_NAME} found .options-content menu`);
     
-    // Create menu item matching SillyTavern's style
+    // Create "Edit Persona" menu item
+    const editMenuItem = document.createElement('a');
+    editMenuItem.id = 'option_edit_persona';
+    editMenuItem.innerHTML = `
+        <i class="fa-lg fa-solid fa-user-pen"></i>
+        <span>Edit Persona</span>
+    `;
+    editMenuItem.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openEditPersonaPopup();
+    });
+    
+    // Create "Persona Generator" menu item
     const menuItem = document.createElement('a');
     menuItem.id = 'option_persona_generator';
     menuItem.innerHTML = `
@@ -678,11 +924,13 @@ function addToolbarButton() {
     }
     
     if (insertAfterLink) {
-        insertAfterLink.parentNode.insertBefore(menuItem, insertAfterLink.nextSibling);
-        console.log(`${EXTENSION_NAME} menu item inserted after ${insertAfterLink.textContent}`);
+        insertAfterLink.parentNode.insertBefore(editMenuItem, insertAfterLink.nextSibling);
+        insertAfterLink.parentNode.insertBefore(menuItem, editMenuItem.nextSibling);
+        console.log(`${EXTENSION_NAME} menu items inserted after ${insertAfterLink.textContent}`);
     } else {
+        optionsContent.appendChild(editMenuItem);
         optionsContent.appendChild(menuItem);
-        console.log(`${EXTENSION_NAME} menu item appended to options menu`);
+        console.log(`${EXTENSION_NAME} menu items appended to options menu`);
     }
 }
 
