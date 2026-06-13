@@ -500,35 +500,74 @@ async function handleSave(popup) {
     const finalName = personaName || characterName;
 
     try {
-        const { powerUserSettings, saveSettingsDebounced, eventSource, event_types } = SillyTavern.getContext();
+        const { powerUserSettings, saveSettingsDebounced, eventSource, event_types, getRequestHeaders } = SillyTavern.getContext();
         
-        // Get existing persona count before creation
-        const existingPersonas = Object.keys(powerUserSettings.personas || {});
+        // Generate a unique avatar ID
+        const avatarId = `persona_gen_${Date.now()}.png`;
         
-        // Create persona using slash command (creates avatar file)
-        const { executeSlashCommandsWithOptions } = SillyTavern.getContext();
-        await executeSlashCommandsWithOptions(`/persona-create name="${finalName}"`);
+        // Create a small 10x10 colored PNG as avatar (purple like default)
+        // This is a minimal valid PNG file
+        const canvas = document.createElement('canvas');
+        canvas.width = 10;
+        canvas.height = 10;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#9b59b6';
+        ctx.fillRect(0, 0, 10, 10);
         
-        // Find the newly created persona (new key not in existing list)
-        const allPersonas = Object.keys(powerUserSettings.personas || {});
-        const newAvatarId = allPersonas.find(id => !existingPersonas.includes(id));
+        // Convert canvas to blob
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        const file = new File([blob], avatarId, { type: 'image/png' });
         
-        if (newAvatarId && powerUserSettings.persona_descriptions[newAvatarId]) {
-            // Set the description directly on the persona
-            powerUserSettings.persona_descriptions[newAvatarId].description = personaText;
-            saveSettingsDebounced();
-            console.log('Persona description set:', { avatarId: newAvatarId, name: finalName });
-        } else {
-            console.warn('Could not find newly created persona to set description');
+        // Create FormData for upload
+        const formData = new FormData();
+        formData.append('avatar', file);
+        formData.append('overwrite', 'true');
+        
+        // Upload the avatar
+        const uploadResponse = await fetch('/api/avatars/upload', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: formData,
+        });
+        
+        if (!uploadResponse.ok) {
+            const errorText = await uploadResponse.text();
+            console.error('Avatar upload failed:', uploadResponse.status, errorText);
+            throw new Error(`Avatar upload failed: ${uploadResponse.status}`);
         }
+        
+        const uploadResult = await uploadResponse.json();
+        console.log('Avatar uploaded:', uploadResult);
+        
+        // Set persona name
+        powerUserSettings.personas[avatarId] = finalName;
+        
+        // Set persona description
+        powerUserSettings.persona_descriptions[avatarId] = {
+            description: personaText,
+            position: 0,
+        };
+        
+        // Save settings immediately
+        saveSettingsDebounced();
         
         // Emit event to refresh UI
         if (eventSource && event_types) {
             await eventSource.emit(event_types.PERSONA_CREATED, {
+                avatarId: avatarId,
                 name: finalName,
                 description: personaText,
+                title: '',
             });
         }
+        
+        // Refresh persona list
+        const { getUserAvatars } = SillyTavern.getContext();
+        if (getUserAvatars) {
+            await getUserAvatars(true, avatarId);
+        }
+        
+        console.log('Persona created:', { avatarId, name: finalName });
         
         toastr.success(`Persona "${finalName}" created in SillyTavern! You can now select it in Persona Management.`);
         
