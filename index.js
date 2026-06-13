@@ -270,9 +270,11 @@ function buildPrompt(character, options) {
 function buildNarrativePrompt(name, userPrefs, cardContext, person) {
     const povRules = person === 'First person'
         ? 'Write a first-person narrative introduction. The persona must feel like a real person introducing themselves naturally - casual, honest, with personality showing through word choice.\n\nInclude: name, age, appearance, personality, skills, history with {name}, and current motivation.\n\nRULES:\n- First person only ("I", "my", "me")'
-        : 'Write a third-person narrative description. Describe the character as if telling their story to someone else - casual, vivid, with personality showing through details.\n\nInclude: name, age, appearance, personality, skills, history with {name}, and current motivation.\n\nRULES:\n- Third person only ("he/she", "his/her", "the character")';
+        : 'Write a third-person narrative description. Describe the character as if telling their story to someone else - casual, vivid, with personality showing through details.\n\nInclude: name, age, appearance, personality, skills, history with {name}, and and current motivation.\n\nRULES:\n- Third person only ("he/she", "his/her", "the character")';
 
-    return `You are an expert persona designer for roleplay scenarios. Design a persona profile for a user who will interact with ${name}.
+    return `You are an expert persona designer for roleplay scenarios. Design a PERSONA FOR THE USER who will interact with the character ${name}.
+
+IMPORTANT: This persona represents the USER/PLAYER, NOT the character ${name}. The persona must have a COMPLETELY DIFFERENT name from ${name}. Create an original name that is NOT related to ${name}.
 
 USER PREFERENCES:
 ${userPrefs}
@@ -302,7 +304,9 @@ function buildStructuredPrompt(name, userPrefs, cardContext, person) {
         ? '"A concise 2-3 sentence overview that captures the persona\'s essence, current role, and what makes them unique"'
         : '"A concise 2-3 sentence overview that captures the character\'s essence, current role, and what makes them unique"';
 
-    return `You are an expert persona designer for roleplay scenarios. Create a persona profile for someone who will interact with ${name}.
+    return `You are an expert persona designer for roleplay scenarios. Create a PERSONA FOR THE USER who will interact with the character ${name}.
+
+IMPORTANT: This persona represents the USER/PLAYER, NOT the character ${name}. The persona must have a COMPLETELY DIFFERENT name from ${name}. Create an original name that is NOT related to ${name}.
 
 Write in ${povLabel} ${pronouns}. Keep it casual and direct - no fancy academic language, no overwrought descriptions. Think "friend helping you brainstorm" not "literature professor."
 
@@ -396,7 +400,9 @@ function buildProfilePrompt(name, userPrefs, cardContext, person) {
         ? 'NAME: [My name]\nAGE: [My age]\nGENDER: [My gender]\nSPECIES: [My species/race]\nOCCUPATION: [What I do]'
         : 'NAME: [Character name]\nAGE: [Character age]\nGENDER: [Character gender]\nSPECIES: [Character species/race]\nOCCUPATION: [What they do]';
 
-    return `You are an expert persona designer for roleplay scenarios. Create a character profile sheet for a user who will interact with ${name}.
+    return `You are an expert persona designer for roleplay scenarios. Create a PERSONA PROFILE FOR THE USER who will interact with the character ${name}.
+
+IMPORTANT: This persona represents the USER/PLAYER, NOT the character ${name}. The persona must have a COMPLETELY DIFFERENT name from ${name}. Create an original name that is NOT related to ${name}.
 
 USER PREFERENCES:
 ${userPrefs}
@@ -437,7 +443,9 @@ function buildDialoguePrompt(name, userPrefs, cardContext, person) {
         ? 'Write as spoken dialogue in first person with natural speech patterns\n- Include brief action/narration in asterisks (*adjusts cloak*, *smiles*)\n- Make it feel like meeting a real person'
         : 'Write as a narrative description of the character introducing themselves in third person\n- Include action/narration in asterisks (*adjusts cloak*, *smiles*)\n- Make it feel like observing a real person';
 
-    return `You are an expert persona designer for roleplay scenarios. Create a self-introduction for a user who will meet ${name}.
+    return `You are an expert persona designer for roleplay scenarios. Create a self-introduction FOR THE USER who will meet the character ${name}.
+
+IMPORTANT: This persona represents the USER/PLAYER, NOT the character ${name}. The persona must have a COMPLETELY DIFFERENT name from ${name}. Create an original name that is NOT related to ${name}.
 
 USER PREFERENCES:
 ${userPrefs}
