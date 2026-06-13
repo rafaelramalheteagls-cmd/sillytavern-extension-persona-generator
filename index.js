@@ -451,19 +451,22 @@ async function handleSave(popup) {
         return;
     }
 
-    const { characters, characterId } = SillyTavern.getContext();
+    // Get the character name from the select dropdown in the popup
+    const characterSelect = popup.querySelector('#persona-gen-character');
+    const { characters } = SillyTavern.getContext();
+    const characterId = parseInt(characterSelect.value);
     const character = characters[characterId];
     const characterName = character ? character.name : 'character';
 
     try {
         // Use slash command to create persona
-        const { SlashCommandParser, executeSlashCommandsWithOptions } = SillyTavern.getContext();
+        const { executeSlashCommandsWithOptions } = SillyTavern.getContext();
         
-        // Generate a unique avatar ID
-        const avatarId = `persona_gen_${Date.now()}`;
+        // Create persona using slash command with proper escaping
+        const command = `/persona-create name="${characterName}" description="${personaText.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+        console.log('Executing slash command:', command);
         
-        // Create persona using slash command
-        await executeSlashCommandsWithOptions(`/persona-create name="${characterName}" description="${personaText.replace(/"/g, '\\"')}"`);
+        await executeSlashCommandsWithOptions(command);
         
         toastr.success(`Persona "${characterName}" created in SillyTavern! You can now select it in Persona Management.`);
         
