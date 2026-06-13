@@ -10,8 +10,5 @@
     "version": "1.0.0",
     "homePage": "https://github.com/rafaelramalheteagls-cmd/sillytavern-extension-persona-generator",
     "auto_update": true,
-    "minimum_client_version": "1.0.0",
-    "hooks": {
-        "activate": "onActivate"
-    }
+    "minimum_client_version": "1.12.0"
 }

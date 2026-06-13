@@ -41,12 +41,12 @@ function saveSettings() {
     saveSettingsDebounced();
 }
 
-export async function onActivate() {
+jQuery(() => {
     settings = getSettings();
     registerSlashCommand();
     addToolbarButton();
-    console.log(`${EXTENSION_NAME} activated`);
-}
+    console.log(`${EXTENSION_NAME} initialized`);
+});
 
 function registerSlashCommand() {
     const { SlashCommandParser, SlashCommand } = SillyTavern.getContext();
@@ -62,36 +62,43 @@ function registerSlashCommand() {
 }
 
 function addToolbarButton() {
-    const dataBankButton = document.querySelector('[data-tooltip="Open Data Bank"]') || 
-                           document.querySelector('button[title="Open Data Bank"]');
-    
-    if (!dataBankButton) {
-        console.log('Data Bank button not found, trying alternative selectors...');
-        const allButtons = document.querySelectorAll('.drawer-toggle, .fa-database, [class*="databank"]');
-        for (const btn of allButtons) {
-            if (btn.textContent.includes('Data Bank') || btn.getAttribute('data-tooltip')?.includes('Data Bank')) {
-                insertButtonAfter(btn);
-                return;
+    setTimeout(() => {
+        try {
+            const extensionsMenu = document.getElementById('extensions_settings') || 
+                                   document.querySelector('.extensions-container');
+            
+            if (extensionsMenu) {
+                const settingsHtml = `
+                    <div class="persona-gen-toolbar-section">
+                        <div class="inline-drawer">
+                            <div class="inline-drawer-toggle inline-drawer-header">
+                                <b>Persona Generator</b>
+                                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                            </div>
+                            <div class="inline-drawer-content">
+                                <button id="persona_gen_open_btn" class="menu_button">
+                                    <i class="fa-solid fa-user-plus"></i>
+                                    <span>Open Persona Generator</span>
+                                </button>
+                                <small>Or use <code>/persona-gen</code> in chat</small>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                extensionsMenu.insertAdjacentHTML('beforeend', settingsHtml);
+                
+                const openBtn = document.getElementById('persona_gen_open_btn');
+                if (openBtn) {
+                    openBtn.addEventListener('click', () => openPersonaGeneratorPopup());
+                }
+                
+                console.log(`${EXTENSION_NAME} settings panel added`);
             }
+        } catch (error) {
+            console.error('Error adding toolbar button:', error);
         }
-        console.log('Could not find Data Bank button. Extension will still work via slash command.');
-        return;
-    }
-    
-    insertButtonAfter(dataBankButton);
-}
-
-function insertButtonAfter(existingButton) {
-    const buttonContainer = existingButton.parentElement;
-    
-    const personaButton = document.createElement('button');
-    personaButton.className = existingButton.className;
-    personaButton.title = 'Open Persona Generator';
-    personaButton.setAttribute('data-tooltip', 'Open Persona Generator');
-    personaButton.innerHTML = '<i class="fa-solid fa-user-plus"></i><span class="drawer-toggle-text">Open Persona Generator</span>';
-    personaButton.addEventListener('click', () => openPersonaGeneratorPopup());
-    
-    existingButton.insertAdjacentElement('afterend', personaButton);
+    }, 2000);
 }
 
 function openPersonaGeneratorPopup() {
