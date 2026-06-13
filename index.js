@@ -442,6 +442,37 @@ ${cardContext}
 Write the self-introduction.`;
 }
 
+function extractPersonaName(personaText) {
+    // Try to extract name from different formats
+    
+    // Format 1: Structured format - look for <general_info> section
+    const structuredMatch = personaText.match(/<general_info>[\s\S]*?-Name:\s*["\[]?([^"\]\n]+)/i);
+    if (structuredMatch) {
+        return structuredMatch[1].trim().replace(/^["'\[]/, '').replace(/["'\]]$/, '');
+    }
+    
+    // Format 2: Profile format - look for NAME: [name]
+    const profileMatch = personaText.match(/NAME:\s*["\[]?([^"\]\n]+)/i);
+    if (profileMatch) {
+        return profileMatch[1].trim().replace(/^["'\[]/, '').replace(/["'\]]$/, '');
+    }
+    
+    // Format 3: Look for "My name is X" or "I am X"
+    const introMatch = personaText.match(/(?:My name is|I'm|I am|Call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/);
+    if (introMatch) {
+        return introMatch[1].trim();
+    }
+    
+    // Format 4: Look for first capitalized word that could be a name
+    const firstWordMatch = personaText.match(/^([A-Z][a-z]{2,})/);
+    if (firstWordMatch) {
+        return firstWordMatch[1].trim();
+    }
+    
+    // Default: return null
+    return null;
+}
+
 async function handleSave(popup) {
     const resultTextarea = popup.querySelector('#persona-gen-result');
     const personaText = resultTextarea.value;
@@ -451,24 +482,34 @@ async function handleSave(popup) {
         return;
     }
 
-    // Get the character name from the select dropdown in the popup
+    // Extract persona name from generated text
+    const personaName = extractPersonaName(personaText);
+    
+    if (!personaName) {
+        toastr.warning('Could not extract persona name from generated text. Using default name.');
+    }
+    
+    // Get the character name from the select dropdown for fallback
     const characterSelect = popup.querySelector('#persona-gen-character');
     const { characters } = SillyTavern.getContext();
     const characterId = parseInt(characterSelect.value);
     const character = characters[characterId];
     const characterName = character ? character.name : 'character';
+    
+    // Use extracted persona name, fallback to character name
+    const finalName = personaName || characterName;
 
     try {
         // Use slash command to create persona
         const { executeSlashCommandsWithOptions } = SillyTavern.getContext();
         
         // Create persona using slash command with proper escaping
-        const command = `/persona-create name="${characterName}" description="${personaText.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+        const command = `/persona-create name="${finalName}" description="${personaText.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
         console.log('Executing slash command:', command);
         
         await executeSlashCommandsWithOptions(command);
         
-        toastr.success(`Persona "${characterName}" created in SillyTavern! You can now select it in Persona Management.`);
+        toastr.success(`Persona "${finalName}" created in SillyTavern! You can now select it in Persona Management.`);
         
         // Close the popup
         popup.remove();
