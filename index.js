@@ -500,14 +500,33 @@ async function handleSave(popup) {
     const finalName = personaName || characterName;
 
     try {
-        // Use slash command to create persona
-        const { executeSlashCommandsWithOptions } = SillyTavern.getContext();
+        // Use SillyTavern API to create persona directly
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
         
-        // Create persona using slash command with proper escaping
-        const command = `/persona-create name="${finalName}" description="${personaText.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
-        console.log('Executing slash command:', command);
+        // Generate a unique avatar ID
+        const avatarId = `persona_gen_${Date.now()}`;
         
-        await executeSlashCommandsWithOptions(command);
+        // Create persona using the internal API
+        const response = await fetch('/api/personas/create', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken,
+            },
+            body: JSON.stringify({
+                avatarId: avatarId,
+                name: finalName,
+                description: personaText,
+                title: '',
+            }),
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('Persona created:', result);
         
         toastr.success(`Persona "${finalName}" created in SillyTavern! You can now select it in Persona Management.`);
         
