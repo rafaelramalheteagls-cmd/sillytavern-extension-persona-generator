@@ -233,3 +233,111 @@
         width: 100%;
     }
 }
+
+/* Toolbar Button Styles */
+.persona-gen-toolbar-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 4px 0;
+}
+
+.persona_gen_toolbar_button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    background: #1a1a2e;
+    border: 1px solid #2d2d44;
+    border-radius: 8px;
+    color: #e94560;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.persona_gen_toolbar_button:hover {
+    background: #e94560;
+    color: #fff;
+    border-color: #e94560;
+}
+
+.persona_gen_toolbar_button i {
+    font-size: 18px;
+}
+
+/* Floating Button (alternative) */
+.persona_gen_floating_button {
+    position: fixed;
+    bottom: 80px;
+    left: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #e94560;
+    border: none;
+    border-radius: 25px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(233, 69, 96, 0.4);
+    transition: all 0.2s;
+    z-index: 9999;
+}
+
+.persona_gen_floating_button:hover {
+    background: #d63851;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(233, 69, 96, 0.5);
+}
+
+.persona_gen_floating_button i {
+    font-size: 16px;
+}
+
+/* Settings Panel Styles */
+.persona-gen-toolbar-section {
+    margin-bottom: 10px;
+}
+
+.persona-gen-toolbar-section .inline-drawer-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 0;
+}
+
+.persona-gen-toolbar-section .menu_button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    background: #1a1a2e;
+    border: 1px solid #2d2d44;
+    border-radius: 6px;
+    color: #e94560;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.persona-gen-toolbar-section .menu_button:hover {
+    background: #e94560;
+    color: #fff;
+}
+
+.persona-gen-toolbar-section small {
+    color: #888;
+    font-size: 12px;
+}
+
+.persona-gen-toolbar-section code {
+    background: #0d1b2a;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #e94560;
+}

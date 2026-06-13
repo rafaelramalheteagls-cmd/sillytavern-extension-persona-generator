@@ -64,41 +64,68 @@ function registerSlashCommand() {
 function addToolbarButton() {
     setTimeout(() => {
         try {
-            const extensionsMenu = document.getElementById('extensions_settings') || 
-                                   document.querySelector('.extensions-container');
+            // Find the toolbar container - look for the drawer with utility buttons
+            const toolbarContainer = document.querySelector('#send_button_wrapper') ||
+                                    document.querySelector('.drawers-container') ||
+                                    document.querySelector('#extensions_settings');
             
-            if (extensionsMenu) {
-                const settingsHtml = `
-                    <div class="persona-gen-toolbar-section">
-                        <div class="inline-drawer">
-                            <div class="inline-drawer-toggle inline-drawer-header">
-                                <b>Persona Generator</b>
-                                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                            </div>
-                            <div class="inline-drawer-content">
-                                <button id="persona_gen_open_btn" class="menu_button">
-                                    <i class="fa-solid fa-user-plus"></i>
-                                    <span>Open Persona Generator</span>
-                                </button>
-                                <small>Or use <code>/persona-gen</code> in chat</small>
-                            </div>
-                        </div>
-                    </div>
-                `;
+            if (toolbarContainer) {
+                // Create the toolbar button
+                const buttonWrapper = document.createElement('div');
+                buttonWrapper.id = 'persona_gen_toolbar_wrapper';
+                buttonWrapper.className = 'persona-gen-toolbar-wrapper';
                 
-                extensionsMenu.insertAdjacentHTML('beforeend', settingsHtml);
+                const button = document.createElement('button');
+                button.id = 'persona_gen_toolbar_btn';
+                button.className = 'persona_gen_toolbar_button';
+                button.title = 'Open Persona Generator';
+                button.setAttribute('data-tooltip', 'Open Persona Generator');
+                button.innerHTML = '<i class="fa-solid fa-user-plus"></i>';
+                button.addEventListener('click', () => openPersonaGeneratorPopup());
                 
-                const openBtn = document.getElementById('persona_gen_open_btn');
-                if (openBtn) {
-                    openBtn.addEventListener('click', () => openPersonaGeneratorPopup());
+                buttonWrapper.appendChild(button);
+                
+                // Try to insert after a specific button or at the beginning
+                const firstButton = toolbarContainer.querySelector('button') || toolbarContainer.firstChild;
+                if (firstButton) {
+                    firstButton.parentNode.insertBefore(buttonWrapper, firstButton);
+                } else {
+                    toolbarContainer.appendChild(buttonWrapper);
                 }
                 
-                console.log(`${EXTENSION_NAME} settings panel added`);
+                console.log(`${EXTENSION_NAME} toolbar button added`);
+            } else {
+                console.log(`${EXTENSION_NAME} toolbar container not found, trying alternative...`);
+                addToolbarButtonAlternative();
             }
         } catch (error) {
             console.error('Error adding toolbar button:', error);
+            addToolbarButtonAlternative();
         }
-    }, 2000);
+    }, 3000);
+}
+
+function addToolbarButtonAlternative() {
+    try {
+        // Look for the sidebar or utility buttons area
+        const sidebar = document.querySelector('#sheld') ||
+                       document.querySelector('.sidebar') ||
+                       document.querySelector('#chat');
+        
+        if (sidebar) {
+            const button = document.createElement('button');
+            button.id = 'persona_gen_floating_btn';
+            button.className = 'persona_gen_floating_button';
+            button.title = 'Open Persona Generator';
+            button.innerHTML = '<i class="fa-solid fa-user-plus"></i><span>Persona</span>';
+            button.addEventListener('click', () => openPersonaGeneratorPopup());
+            
+            sidebar.insertAdjacentElement('beforebegin', button);
+            console.log(`${EXTENSION_NAME} floating button added`);
+        }
+    } catch (error) {
+        console.error('Error adding floating button:', error);
+    }
 }
 
 function openPersonaGeneratorPopup() {
