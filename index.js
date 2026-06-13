@@ -511,9 +511,9 @@ async function handleSave(popup) {
         ctx2d.fillRect(0, 0, 10, 10);
         const avatarDataUrl = canvas.toDataURL('image/png');
         
-        // Step 1: Create persona via slash command
+        // Step 1: Create persona via slash command (quote name to preserve spaces)
         if (context.executeSlashCommandsWithOptions) {
-            const createCmd = `/persona-create name=${finalName} select=false avatarPromptResize=false avatar=${avatarDataUrl}`;
+            const createCmd = `/persona-create name="${finalName}" select=false avatarPromptResize=false avatar=${avatarDataUrl}`;
             console.log('[PersonaGen] Running persona-create for:', finalName);
             await context.executeSlashCommandsWithOptions(createCmd);
         }
@@ -529,10 +529,19 @@ async function handleSave(popup) {
         console.log('[PersonaGen] personas:', JSON.stringify(powerUser?.personas || {}));
         
         if (powerUser && powerUser.personas) {
+            // First try exact match
             for (const [key, name] of Object.entries(powerUser.personas)) {
                 if (name === finalName) {
                     avatarId = key;
                     break;
+                }
+            }
+            // If not found, try finding the most recently created persona_gen_ entry
+            if (!avatarId) {
+                const genEntries = Object.entries(powerUser.personas).filter(([key]) => key.startsWith('persona_gen_'));
+                if (genEntries.length > 0) {
+                    avatarId = genEntries[genEntries.length - 1][0];
+                    console.log('[PersonaGen] Using latest persona_gen_ entry:', avatarId, powerUser.personas[avatarId]);
                 }
             }
         }
