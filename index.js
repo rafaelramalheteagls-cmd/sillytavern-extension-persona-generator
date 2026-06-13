@@ -500,10 +500,30 @@ async function handleSave(popup) {
     const finalName = personaName || characterName;
 
     try {
-        const { powerUserSettings, saveSettingsDebounced } = SillyTavern.getContext();
+        const { powerUserSettings, saveSettingsDebounced, getRequestHeaders } = SillyTavern.getContext();
         
         // Generate a unique avatar ID
         const avatarId = `persona_gen_${Date.now()}.png`;
+        
+        // Create a tiny 1x1 transparent PNG as dummy avatar
+        const dummyAvatar = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+        const blob = Uint8Array.from(atob(dummyAvatar), c => c.charCodeAt(0));
+        
+        // Upload the dummy avatar via the server endpoint
+        const formData = new FormData();
+        const avatarFile = new File([blob], avatarId, { type: 'image/png' });
+        formData.append('avatar', avatarFile);
+        formData.append('overwrite', 'true');
+        
+        const uploadResponse = await fetch('/api/avatars/upload', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: formData,
+        });
+        
+        if (!uploadResponse.ok) {
+            console.warn('Avatar upload failed, trying alternative method');
+        }
         
         // Set persona name
         powerUserSettings.personas[avatarId] = finalName;
@@ -516,6 +536,17 @@ async function handleSave(popup) {
         
         // Save settings
         saveSettingsDebounced();
+        
+        // Emit PERSONA_CREATED event to update UI
+        const { eventSource, event_types } = SillyTavern.getContext();
+        if (eventSource && event_types) {
+            await eventSource.emit(event_types.PERSONA_CREATED, {
+                avatarId: avatarId,
+                name: finalName,
+                description: personaText,
+                title: '',
+            });
+        }
         
         console.log('Persona created:', { avatarId, name: finalName });
         
