@@ -267,6 +267,36 @@
     font-size: 18px;
 }
 
+/* Left Sidebar Toolbar Button */
+.persona-gen-toolbar-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    margin: 4px 0;
+    background: #1a1a2e;
+    border: 1px solid #2d2d44;
+    border-radius: 8px;
+    color: #e94560;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.persona-gen-toolbar-btn:hover {
+    background: #e94560;
+    color: #fff;
+    border-color: #e94560;
+}
+
+.persona-gen-toolbar-icon {
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 /* Floating Button (alternative) */
 .persona_gen_floating_button {
     position: fixed;

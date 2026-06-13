@@ -480,8 +480,56 @@ function handleCopy(popup) {
     });
 }
 
+function addToolbarButton() {
+    // Try multiple selectors to find the toolbar container
+    const selectors = [
+        '#send_button_wrapper',
+        '.toolbar',
+        '#extensions_menu',
+        '#left-nav-panel',
+        '.drawer-content',
+        '#top-bar',
+        'body'
+    ];
+    
+    let targetContainer = null;
+    for (const selector of selectors) {
+        const el = document.querySelector(selector);
+        if (el) {
+            targetContainer = el;
+            console.log(`${EXTENSION_NAME} found toolbar container: ${selector}`);
+            break;
+        }
+    }
+    
+    if (!targetContainer) {
+        console.warn(`${EXTENSION_NAME} could not find toolbar container`);
+        return;
+    }
+    
+    // Create toolbar button
+    const toolbarBtn = document.createElement('div');
+    toolbarBtn.id = 'persona-gen-toolbar-btn';
+    toolbarBtn.className = 'persona-gen-toolbar-btn';
+    toolbarBtn.innerHTML = `
+        <div class="persona-gen-toolbar-icon fa-solid fa-user-plus" title="Persona Generator"></div>
+    `;
+    toolbarBtn.addEventListener('click', () => openPersonaGeneratorPopup());
+    
+    // Try to insert after a specific element, or just append
+    const openDataBank = document.querySelector('[data-i18n="Open Data Bank"]') || 
+                         document.querySelector('[title*="Data Bank"]');
+    if (openDataBank && openDataBank.parentNode) {
+        openDataBank.parentNode.insertBefore(toolbarBtn, openDataBank.nextSibling);
+        console.log(`${EXTENSION_NAME} toolbar button inserted after Data Bank`);
+    } else {
+        targetContainer.appendChild(toolbarBtn);
+        console.log(`${EXTENSION_NAME} toolbar button appended to container`);
+    }
+}
+
 function addExtensionSettings() {
-    const { renderExtensionTemplateAsync, getContext } = SillyTavern.getContext();
+    const { renderExtensionTemplateAsync } = SillyTavern.getContext();
     
     const settingsHtml = `
         <div class="persona-gen-settings-container">
@@ -517,7 +565,9 @@ function addExtensionSettings() {
         </div>
     `;
     
-    $('#extensions_settings').append(settingsHtml);
+    // Try both selectors for extensions settings
+    const $settings = $('#extensions_settings2').length ? $('#extensions_settings2') : $('#extensions_settings');
+    $settings.append(settingsHtml);
     
     $('#persona_gen_open_btn').on('click', () => openPersonaGeneratorPopup());
     
@@ -545,7 +595,11 @@ function addExtensionSettings() {
 
         eventSource.on(event_types.APP_READY, () => {
             addExtensionSettings();
-            console.log(`${EXTENSION_NAME} loaded successfully`);
+            // Add toolbar button with a delay to ensure DOM is ready
+            setTimeout(() => {
+                addToolbarButton();
+                console.log(`${EXTENSION_NAME} loaded successfully`);
+            }, 500);
         });
     }
 
