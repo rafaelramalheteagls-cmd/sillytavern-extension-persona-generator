@@ -207,21 +207,26 @@ async function handleGenerate(popup, characters, settings) {
 
         const context = SillyTavern.getContext();
         
-        // Temporarily disable persona description to prevent it from being included in the prompt
+        // Temporarily disable persona description and user name to prevent them from being included in the prompt
         const savedPersonaDescription = context.powerUserSettings?.persona_description;
         const savedPersonaDescPosition = context.powerUserSettings?.persona_description_position;
+        const savedUserName = document.querySelector('#your_name')?.textContent || 'User';
         if (context.powerUserSettings) {
             context.powerUserSettings.persona_description = '';
             context.powerUserSettings.persona_description_position = 9; // 9 = NONE
         }
+        // Set neutral user name
+        const userNameEl = document.querySelector('#your_name');
+        if (userNameEl) userNameEl.textContent = 'User';
 
         const result = await context.generateQuietPrompt({ quietPrompt: prompt });
 
-        // Restore persona description
+        // Restore persona description and user name
         if (context.powerUserSettings) {
             context.powerUserSettings.persona_description = savedPersonaDescription;
             context.powerUserSettings.persona_description_position = savedPersonaDescPosition;
         }
+        if (userNameEl) userNameEl.textContent = savedUserName;
 
         resultTextarea.value = result;
         resultSection.style.display = 'block';
@@ -785,21 +790,26 @@ async function handleEditGenerate(popup, personas, personaDescriptions) {
 
         const context = SillyTavern.getContext();
         
-        // Temporarily disable persona description to prevent it from being included in the prompt
+        // Temporarily disable persona description and user name to prevent them from being included in the prompt
         const savedPersonaDescription = context.powerUserSettings?.persona_description;
         const savedPersonaDescPosition = context.powerUserSettings?.persona_description_position;
+        const savedUserName = document.querySelector('#your_name')?.textContent || 'User';
         if (context.powerUserSettings) {
             context.powerUserSettings.persona_description = '';
             context.powerUserSettings.persona_description_position = 9; // 9 = NONE
         }
+        // Set neutral user name
+        const userNameEl = document.querySelector('#your_name');
+        if (userNameEl) userNameEl.textContent = 'User';
 
         const result = await context.generateQuietPrompt({ quietPrompt: prompt });
 
-        // Restore persona description
+        // Restore persona description and user name
         if (context.powerUserSettings) {
             context.powerUserSettings.persona_description = savedPersonaDescription;
             context.powerUserSettings.persona_description_position = savedPersonaDescPosition;
         }
+        if (userNameEl) userNameEl.textContent = savedUserName;
 
         resultTextarea.value = result;
         resultSection.style.display = 'block';
