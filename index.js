@@ -522,24 +522,27 @@ async function handleSave(popup) {
         formData.append('avatar', file);
         formData.append('overwrite_name', avatarId);
         
-        // Upload the avatar using the correct endpoint
-        // Only include CSRF token - FormData sets Content-Type automatically
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
-        const uploadResponse = await fetch('/uploaduseravatar', {
-            method: 'POST',
-            headers: {
-                'X-CSRF-Token': csrfToken,
-            },
-            body: formData,
+        // Upload the avatar using jQuery with CSRF header
+        const uploadResult = await new Promise((resolve, reject) => {
+            $.ajax({
+                url: '/uploaduseravatar',
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                beforeSend: function(xhr) {
+                    // Add CSRF token header
+                    xhr.setRequestHeader('X-CSRF-Token', getRequestHeaders()['X-CSRF-Token'] || '');
+                },
+                success: function(result) {
+                    resolve(result);
+                },
+                error: function(xhr, status, error) {
+                    reject(new Error(`Avatar upload failed: ${xhr.status} ${error}`));
+                },
+            });
         });
         
-        if (!uploadResponse.ok) {
-            const errorText = await uploadResponse.text();
-            console.error('Avatar upload failed:', uploadResponse.status, errorText);
-            throw new Error(`Avatar upload failed: ${uploadResponse.status}`);
-        }
-        
-        const uploadResult = await uploadResponse.json();
         console.log('Avatar uploaded:', uploadResult);
         
         // Set persona name
