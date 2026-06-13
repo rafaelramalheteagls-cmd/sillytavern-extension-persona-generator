@@ -511,17 +511,23 @@ async function handleSave(popup) {
         ctx2d.fillRect(0, 0, 10, 10);
         const avatarDataUrl = canvas.toDataURL('image/png');
         
-        // Step 1: Create persona via slash command (registers in power_user + uploads avatar)
+        // Step 1: Create persona via slash command
         if (context.executeSlashCommandsWithOptions) {
             const createCmd = `/persona-create name=${finalName} select=false avatarPromptResize=false avatar=${avatarDataUrl}`;
-            console.log('Running persona-create for:', finalName);
+            console.log('[PersonaGen] Running persona-create for:', finalName);
             await context.executeSlashCommandsWithOptions(createCmd);
         }
         
-        // Step 2: Find the avatar ID that was just created
-        await new Promise(r => setTimeout(r, 200));
+        // Wait longer for slash command to fully complete
+        await new Promise(r => setTimeout(r, 500));
+        
+        // Step 2: Find the avatar ID
         const powerUser = context.powerUserSettings;
         let avatarId = null;
+        
+        console.log('[PersonaGen] powerUser keys:', Object.keys(powerUser || {}));
+        console.log('[PersonaGen] personas:', JSON.stringify(powerUser?.personas || {}));
+        
         if (powerUser && powerUser.personas) {
             for (const [key, name] of Object.entries(powerUser.personas)) {
                 if (name === finalName) {
@@ -531,33 +537,46 @@ async function handleSave(popup) {
             }
         }
         
-        // Step 3: Set description directly on power_user object
-        if (avatarId && powerUser && personaText) {
+        console.log('[PersonaGen] Found avatarId:', avatarId);
+        
+        // Step 3: Set description
+        if (avatarId && powerUser) {
             if (!powerUser.persona_descriptions) powerUser.persona_descriptions = {};
             if (!powerUser.persona_descriptions[avatarId]) {
                 powerUser.persona_descriptions[avatarId] = {};
             }
-            powerUser.persona_descriptions[avatarId].description = personaText;
+            powerUser.persona_descriptions[avatarId].description = personaText || '';
             powerUser.persona_descriptions[avatarId].position = 0;
             powerUser.persona_descriptions[avatarId].depth = 2;
             powerUser.persona_descriptions[avatarId].role = 0;
             powerUser.persona_descriptions[avatarId].lorebook = '';
             powerUser.persona_descriptions[avatarId].title = '';
             
-            console.log('Description set for avatar:', avatarId);
+            console.log('[PersonaGen] Description set:', powerUser.persona_descriptions[avatarId].description.substring(0, 50) + '...');
             
             // Save settings
-            if (context.saveSettingsDebounced) {
-                context.saveSettingsDebounced();
+            if (context.saveSettingsDebounced) context.saveSettingsDebounced();
+            
+            // Emit event
+            if (context.eventSource && context.event_types) {
+                context.eventSource.emit(context.event_types.PERSONA_UPDATED, avatarId);
             }
             
-            // Refresh persona list
+            // Refresh UI
             if (context.getUserAvatars) {
                 await context.getUserAvatars(true, avatarId);
             }
+        } else {
+            console.warn('[PersonaGen] Could not find avatar for name:', finalName);
+            // Fallback: try /persona-update via fetch
+            if (personaText && avatarId) {
+                const updateCmd = `/persona-update persona=${avatarId} description="${personaText.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+                console.log('[PersonaGen] Trying fallback /persona-update');
+                await context.executeSlashCommandsWithOptions(updateCmd);
+            }
         }
         
-        console.log('Persona created:', { name: finalName, avatarId });
+        console.log('[PersonaGen] Done:', { name: finalName, avatarId });
         toastr.success(`Persona "${finalName}" created in SillyTavern!`);
         
         popup.remove();
