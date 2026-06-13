@@ -500,14 +500,27 @@ async function handleSave(popup) {
     const finalName = personaName || characterName;
 
     try {
-        const { executeSlashCommandsWithOptions, eventSource, event_types } = SillyTavern.getContext();
+        const { powerUserSettings, saveSettingsDebounced, eventSource, event_types } = SillyTavern.getContext();
         
-        // Create persona using slash command - pass name as argument and description via pipe
-        const command = `/persona-create name="${finalName}"`;
-        console.log('Executing:', command);
+        // Get existing persona count before creation
+        const existingPersonas = Object.keys(powerUserSettings.personas || {});
         
-        // Pass description as pipe input (second argument = pipe value)
-        await executeSlashCommandsWithOptions(command, personaText);
+        // Create persona using slash command (creates avatar file)
+        const { executeSlashCommandsWithOptions } = SillyTavern.getContext();
+        await executeSlashCommandsWithOptions(`/persona-create name="${finalName}"`);
+        
+        // Find the newly created persona (new key not in existing list)
+        const allPersonas = Object.keys(powerUserSettings.personas || {});
+        const newAvatarId = allPersonas.find(id => !existingPersonas.includes(id));
+        
+        if (newAvatarId && powerUserSettings.persona_descriptions[newAvatarId]) {
+            // Set the description directly on the persona
+            powerUserSettings.persona_descriptions[newAvatarId].description = personaText;
+            saveSettingsDebounced();
+            console.log('Persona description set:', { avatarId: newAvatarId, name: finalName });
+        } else {
+            console.warn('Could not find newly created persona to set description');
+        }
         
         // Emit event to refresh UI
         if (eventSource && event_types) {
