@@ -517,7 +517,7 @@ async function handleSave(popup) {
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
         const file = new File([blob], avatarId, { type: 'image/png' });
         
-        // Create FormData for upload - use correct endpoint /uploaduseravatar
+        // Create FormData for upload - use correct endpoint /api/avatars/upload
         const formData = new FormData();
         formData.append('avatar', file);
         formData.append('overwrite_name', avatarId);
@@ -525,7 +525,7 @@ async function handleSave(popup) {
         // Upload the avatar using jQuery with CSRF header
         const uploadResult = await new Promise((resolve, reject) => {
             $.ajax({
-                url: '/uploaduseravatar',
+                url: '/api/avatars/upload',
                 type: 'POST',
                 data: formData,
                 processData: false,
@@ -545,13 +545,20 @@ async function handleSave(popup) {
         
         console.log('Avatar uploaded:', uploadResult);
         
-        // Set persona name
-        powerUserSettings.personas[avatarId] = finalName;
+        // Use the path returned from upload
+        const uploadedPath = uploadResult?.path || avatarId;
         
-        // Set persona description
-        powerUserSettings.persona_descriptions[avatarId] = {
+        // Set persona name
+        powerUserSettings.personas[uploadedPath] = finalName;
+        
+        // Set persona description with full structure
+        powerUserSettings.persona_descriptions[uploadedPath] = {
             description: personaText,
             position: 0,
+            depth: 2,
+            role: 0,
+            lorebook: '',
+            title: '',
         };
         
         // Save settings immediately
@@ -560,19 +567,17 @@ async function handleSave(popup) {
         // Emit event to refresh UI
         if (eventSource && event_types) {
             await eventSource.emit(event_types.PERSONA_CREATED, {
-                avatarId: avatarId,
+                avatarId: uploadedPath,
                 name: finalName,
                 description: personaText,
                 title: '',
             });
         }
         
-        // Refresh persona list
+        // Refresh persona list using SillyTavern's built-in function
         const context = SillyTavern.getContext();
-        if (context.initPersonas) {
-            await context.initPersonas();
-        } else if (context.getUserAvatars) {
-            await context.getUserAvatars(true, avatarId);
+        if (context.getUserAvatars) {
+            await context.getUserAvatars(true, uploadedPath);
         }
         
         console.log('Persona created:', { avatarId, name: finalName });
