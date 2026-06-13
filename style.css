@@ -303,6 +303,30 @@
     justify-content: center;
 }
 
+/* Chat Options Menu Item */
+#option_persona_generator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+#option_persona_generator:hover {
+    background: rgba(233, 69, 96, 0.2);
+}
+
+#option_persona_generator i {
+    color: #e94560;
+    width: 20px;
+    text-align: center;
+}
+
+#option_persona_generator span {
+    color: #fff;
+}
+
 /* Floating Button (alternative) */
 .persona_gen_floating_button {
     position: fixed;

@@ -481,69 +481,46 @@ function handleCopy(popup) {
 }
 
 function addToolbarButton() {
-    // Find the toolbar container - look for the sidebar with utility buttons
-    const selectors = [
-        '#utilities-toggle',
-        '.drawer-opener',
-        '#extensions_menu',
-        '#send_button_wrapper',
-        '.toolbar'
-    ];
+    // Find the Chat Options menu (hamburger menu)
+    const optionsContent = document.querySelector('.options-content');
     
-    let targetContainer = null;
-    let insertMethod = 'append';
-    
-    for (const selector of selectors) {
-        const el = document.querySelector(selector);
-        if (el) {
-            targetContainer = el;
-            console.log(`${EXTENSION_NAME} found toolbar container: ${selector}`);
-            break;
-        }
-    }
-    
-    if (!targetContainer) {
-        console.warn(`${EXTENSION_NAME} could not find toolbar container`);
+    if (!optionsContent) {
+        console.warn(`${EXTENSION_NAME} could not find .options-content menu`);
         return;
     }
     
-    // Create toolbar button matching SillyTavern's style
-    const toolbarBtn = document.createElement('div');
-    toolbarBtn.id = 'persona-gen-toolbar-btn';
-    toolbarBtn.className = 'persona-gen-toolbar-btn menu_button menu_button_icon';
-    toolbarBtn.title = 'Persona Generator';
-    toolbarBtn.innerHTML = `<i class="fa-solid fa-user-plus"></i>`;
-    toolbarBtn.addEventListener('click', (e) => {
+    console.log(`${EXTENSION_NAME} found .options-content menu`);
+    
+    // Create menu item matching SillyTavern's style
+    const menuItem = document.createElement('a');
+    menuItem.id = 'option_persona_generator';
+    menuItem.innerHTML = `
+        <i class="fa-lg fa-solid fa-user-plus"></i>
+        <span>Persona Generator</span>
+    `;
+    menuItem.addEventListener('click', (e) => {
         e.stopPropagation();
         openPersonaGeneratorPopup();
     });
     
-    // Try to find the "Open Data Bank" button and insert after it
-    const allButtons = document.querySelectorAll('.menu_button, .drawer-opener, [title*="Data Bank"]');
-    let dataBankBtn = null;
+    // Find the "Impersonate" or "Continue" option to insert after
+    const allLinks = optionsContent.querySelectorAll('a');
+    let insertAfterLink = null;
     
-    for (const btn of allButtons) {
-        const text = btn.textContent || btn.title || '';
-        if (text.includes('Data Bank') || text.includes('Open Data Bank')) {
-            dataBankBtn = btn;
+    for (const link of allLinks) {
+        const text = link.textContent || '';
+        if (text.includes('Impersonate') || text.includes('Continue')) {
+            insertAfterLink = link;
             break;
         }
     }
     
-    if (dataBankBtn) {
-        // Insert as a new sibling element after the Data Bank button
-        const wrapper = document.createElement('div');
-        wrapper.className = 'persona-gen-toolbar-wrapper';
-        wrapper.appendChild(toolbarBtn);
-        dataBankBtn.parentNode.insertBefore(wrapper, dataBankBtn.nextSibling);
-        console.log(`${EXTENSION_NAME} toolbar button inserted after Data Bank button`);
+    if (insertAfterLink) {
+        insertAfterLink.parentNode.insertBefore(menuItem, insertAfterLink.nextSibling);
+        console.log(`${EXTENSION_NAME} menu item inserted after ${insertAfterLink.textContent}`);
     } else {
-        // Just append to the container
-        const wrapper = document.createElement('div');
-        wrapper.className = 'persona-gen-toolbar-wrapper';
-        wrapper.appendChild(toolbarBtn);
-        targetContainer.appendChild(wrapper);
-        console.log(`${EXTENSION_NAME} toolbar button appended to container`);
+        optionsContent.appendChild(menuItem);
+        console.log(`${EXTENSION_NAME} menu item appended to options menu`);
     }
 }
 
