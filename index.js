@@ -500,33 +500,24 @@ async function handleSave(popup) {
     const finalName = personaName || characterName;
 
     try {
-        // Use SillyTavern API to create persona directly
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        const { powerUserSettings, saveSettingsDebounced } = SillyTavern.getContext();
         
         // Generate a unique avatar ID
-        const avatarId = `persona_gen_${Date.now()}`;
+        const avatarId = `persona_gen_${Date.now()}.png`;
         
-        // Create persona using the internal API
-        const response = await fetch('/api/personas/create', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': csrfToken,
-            },
-            body: JSON.stringify({
-                avatarId: avatarId,
-                name: finalName,
-                description: personaText,
-                title: '',
-            }),
-        });
+        // Set persona name
+        powerUserSettings.personas[avatarId] = finalName;
         
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        // Set persona description
+        powerUserSettings.persona_descriptions[avatarId] = {
+            description: personaText,
+            position: 0,
+        };
         
-        const result = await response.json();
-        console.log('Persona created:', result);
+        // Save settings
+        saveSettingsDebounced();
+        
+        console.log('Persona created:', { avatarId, name: finalName });
         
         toastr.success(`Persona "${finalName}" created in SillyTavern! You can now select it in Persona Management.`);
         
