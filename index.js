@@ -568,9 +568,11 @@ async function handleSave(popup) {
         }
         
         // Refresh persona list
-        const { getUserAvatars } = SillyTavern.getContext();
-        if (getUserAvatars) {
-            await getUserAvatars(true, avatarId);
+        const context = SillyTavern.getContext();
+        if (context.initPersonas) {
+            await context.initPersonas();
+        } else if (context.getUserAvatars) {
+            await context.getUserAvatars(true, avatarId);
         }
         
         console.log('Persona created:', { avatarId, name: finalName });
