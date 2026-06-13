@@ -511,14 +511,53 @@ async function handleSave(popup) {
         ctx2d.fillRect(0, 0, 10, 10);
         const avatarDataUrl = canvas.toDataURL('image/png');
         
-        // Use /persona-create with description via pipe
+        // Step 1: Create persona via slash command (registers in power_user + uploads avatar)
         if (context.executeSlashCommandsWithOptions) {
-            const createCmd = `/persona-create name=${finalName} select=false avatarPromptResize=false avatar=${avatarDataUrl} description={{pipe}}`;
+            const createCmd = `/persona-create name=${finalName} select=false avatarPromptResize=false avatar=${avatarDataUrl}`;
             console.log('Running persona-create for:', finalName);
-            await context.executeSlashCommandsWithOptions(createCmd, { pipes: [personaText] });
+            await context.executeSlashCommandsWithOptions(createCmd);
         }
         
-        console.log('Persona created:', { name: finalName });
+        // Step 2: Find the avatar ID that was just created
+        await new Promise(r => setTimeout(r, 200));
+        const powerUser = context.powerUserSettings;
+        let avatarId = null;
+        if (powerUser && powerUser.personas) {
+            for (const [key, name] of Object.entries(powerUser.personas)) {
+                if (name === finalName) {
+                    avatarId = key;
+                    break;
+                }
+            }
+        }
+        
+        // Step 3: Set description directly on power_user object
+        if (avatarId && powerUser && personaText) {
+            if (!powerUser.persona_descriptions) powerUser.persona_descriptions = {};
+            if (!powerUser.persona_descriptions[avatarId]) {
+                powerUser.persona_descriptions[avatarId] = {};
+            }
+            powerUser.persona_descriptions[avatarId].description = personaText;
+            powerUser.persona_descriptions[avatarId].position = 0;
+            powerUser.persona_descriptions[avatarId].depth = 2;
+            powerUser.persona_descriptions[avatarId].role = 0;
+            powerUser.persona_descriptions[avatarId].lorebook = '';
+            powerUser.persona_descriptions[avatarId].title = '';
+            
+            console.log('Description set for avatar:', avatarId);
+            
+            // Save settings
+            if (context.saveSettingsDebounced) {
+                context.saveSettingsDebounced();
+            }
+            
+            // Refresh persona list
+            if (context.getUserAvatars) {
+                await context.getUserAvatars(true, avatarId);
+            }
+        }
+        
+        console.log('Persona created:', { name: finalName, avatarId });
         toastr.success(`Persona "${finalName}" created in SillyTavern!`);
         
         popup.remove();
