@@ -129,8 +129,15 @@ function buildPopupHTML(characters, currentCharacterId, settings) {
                     <label>Generated Persona:</label>
                     <textarea id="persona-gen-result" rows="8" readonly></textarea>
                     <div class="persona-generator-result-actions">
-                        <button id="persona-gen-save" class="persona-generator-btn success">Save as Persona</button>
-                        <button id="persona-gen-copy" class="persona-generator-btn secondary">Copy to Clipboard</button>
+                        <button id="persona-gen-create" class="persona-generator-btn primary">
+                            <i class="fa-solid fa-plus"></i> Create in SillyTavern
+                        </button>
+                        <button id="persona-gen-download" class="persona-generator-btn secondary">
+                            <i class="fa-solid fa-download"></i> Download JSON
+                        </button>
+                        <button id="persona-gen-copy" class="persona-generator-btn secondary">
+                            <i class="fa-solid fa-copy"></i> Copy to Clipboard
+                        </button>
                     </div>
                 </div>
             </div>
@@ -142,14 +149,16 @@ function setupPopupEventListeners(popup, characters, settings) {
     const overlay = popup.querySelector('.persona-generator-overlay');
     const closeBtn = popup.querySelector('#persona-gen-close');
     const generateBtn = popup.querySelector('#persona-gen-generate');
-    const saveBtn = popup.querySelector('#persona-gen-save');
+    const createBtn = popup.querySelector('#persona-gen-create');
+    const downloadBtn = popup.querySelector('#persona-gen-download');
     const copyBtn = popup.querySelector('#persona-gen-copy');
 
     overlay.addEventListener('click', () => popup.remove());
     closeBtn.addEventListener('click', () => popup.remove());
 
     generateBtn.addEventListener('click', () => handleGenerate(popup, characters, settings));
-    saveBtn.addEventListener('click', () => handleSave(popup));
+    createBtn.addEventListener('click', () => handleSave(popup));
+    downloadBtn.addEventListener('click', () => handleDownload(popup));
     copyBtn.addEventListener('click', () => handleCopy(popup));
 
     popup.addEventListener('keydown', (e) => {
@@ -433,12 +442,45 @@ ${cardContext}
 Write the self-introduction.`;
 }
 
-function handleSave(popup) {
+async function handleSave(popup) {
     const resultTextarea = popup.querySelector('#persona-gen-result');
     const personaText = resultTextarea.value;
 
     if (!personaText) {
         toastr.warning('No persona to save. Generate one first.');
+        return;
+    }
+
+    const { characters, characterId } = SillyTavern.getContext();
+    const character = characters[characterId];
+    const characterName = character ? character.name : 'character';
+
+    try {
+        // Use SillyTavern's persona system to create directly
+        const { initPersona } = SillyTavern.getContext();
+        
+        // Generate a unique avatar ID
+        const avatarId = `persona_gen_${Date.now()}`;
+        
+        // Create the persona with the generated description
+        await initPersona(avatarId, characterName, personaText, '');
+        
+        toastr.success(`Persona "${characterName}" created in SillyTavern! You can now select it in Persona Management.`);
+        
+        // Close the popup
+        popup.remove();
+    } catch (error) {
+        console.error('Error creating persona:', error);
+        toastr.error('Failed to create persona in SillyTavern. Check console for details.');
+    }
+}
+
+function handleDownload(popup) {
+    const resultTextarea = popup.querySelector('#persona-gen-result');
+    const personaText = resultTextarea.value;
+
+    if (!personaText) {
+        toastr.warning('No persona to download. Generate one first.');
         return;
     }
 
@@ -460,7 +502,7 @@ function handleSave(popup) {
     a.click();
     URL.revokeObjectURL(url);
 
-    toastr.success('Persona saved! Import it into SillyTavern.');
+    toastr.success('Persona downloaded as JSON!');
 }
 
 function handleCopy(popup) {
