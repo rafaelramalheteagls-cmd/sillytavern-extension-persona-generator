@@ -12,6 +12,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 10px;
+    box-sizing: border-box;
 }
 
 .persona-generator-overlay {
@@ -29,13 +31,14 @@
     background: #1a1a2e;
     border: 1px solid #2d2d44;
     border-radius: 12px;
-    width: 90%;
+    width: 100%;
     max-width: 600px;
-    max-height: 85vh;
+    max-height: 90vh;
     overflow: hidden;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     display: flex;
     flex-direction: column;
+    margin: auto;
 }
 
 .persona-generator-header {
@@ -400,4 +403,55 @@
     border-radius: 4px;
     font-size: 11px;
     color: #e94560;
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 600px) {
+    .persona-generator-popup {
+        padding: 0;
+        align-items: flex-end;
+    }
+    
+    .persona-generator-modal {
+        max-width: 100%;
+        max-height: 95vh;
+        border-radius: 12px 12px 0 0;
+        margin-bottom: 0;
+    }
+    
+    .persona-generator-header {
+        padding: 12px 16px;
+    }
+    
+    .persona-generator-header h2 {
+        font-size: 16px;
+    }
+    
+    .persona-generator-content {
+        padding: 16px;
+    }
+    
+    .persona-generator-row {
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .persona-generator-actions {
+        flex-direction: column;
+    }
+    
+    .persona-generator-btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .persona-generator-result-actions {
+        flex-direction: column;
+    }
+    
+    .persona-generator-modal select,
+    .persona-generator-modal input,
+    .persona-generator-modal textarea {
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
 }
