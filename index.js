@@ -506,7 +506,6 @@ async function handleSave(popup) {
         const avatarId = `persona_gen_${Date.now()}.png`;
         
         // Create a small 10x10 colored PNG as avatar (purple like default)
-        // This is a minimal valid PNG file
         const canvas = document.createElement('canvas');
         canvas.width = 10;
         canvas.height = 10;
@@ -518,13 +517,13 @@ async function handleSave(popup) {
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
         const file = new File([blob], avatarId, { type: 'image/png' });
         
-        // Create FormData for upload
+        // Create FormData for upload - use correct endpoint /uploaduseravatar
         const formData = new FormData();
         formData.append('avatar', file);
-        formData.append('overwrite', 'true');
+        formData.append('overwrite_name', avatarId);
         
-        // Upload the avatar
-        const uploadResponse = await fetch('/api/avatars/upload', {
+        // Upload the avatar using the correct endpoint
+        const uploadResponse = await fetch('/uploaduseravatar', {
             method: 'POST',
             headers: getRequestHeaders(),
             body: formData,
