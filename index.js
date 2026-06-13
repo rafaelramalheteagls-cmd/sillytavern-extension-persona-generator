@@ -456,14 +456,14 @@ async function handleSave(popup) {
     const characterName = character ? character.name : 'character';
 
     try {
-        // Use SillyTavern's persona system to create directly
-        const { initPersona } = SillyTavern.getContext();
+        // Use slash command to create persona
+        const { SlashCommandParser, executeSlashCommandsWithOptions } = SillyTavern.getContext();
         
         // Generate a unique avatar ID
         const avatarId = `persona_gen_${Date.now()}`;
         
-        // Create the persona with the generated description
-        await initPersona(avatarId, characterName, personaText, '');
+        // Create persona using slash command
+        await executeSlashCommandsWithOptions(`/persona-create name="${characterName}" description="${personaText.replace(/"/g, '\\"')}"`);
         
         toastr.success(`Persona "${characterName}" created in SillyTavern! You can now select it in Persona Management.`);
         
