@@ -500,91 +500,42 @@ async function handleSave(popup) {
     const finalName = personaName || characterName;
 
     try {
-        const { powerUserSettings, saveSettingsDebounced, eventSource, event_types, getRequestHeaders } = SillyTavern.getContext();
+        const context = SillyTavern.getContext();
         
-        // Generate a unique avatar ID
-        const avatarId = `persona_gen_${Date.now()}.png`;
-        
-        // Create a small 10x10 colored PNG as avatar (purple like default)
+        // Create a small 10x10 purple avatar as base64
         const canvas = document.createElement('canvas');
         canvas.width = 10;
         canvas.height = 10;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#9b59b6';
-        ctx.fillRect(0, 0, 10, 10);
+        const ctx2d = canvas.getContext('2d');
+        ctx2d.fillStyle = '#9b59b6';
+        ctx2d.fillRect(0, 0, 10, 10);
+        const avatarDataUrl = canvas.toDataURL('image/png');
         
-        // Convert canvas to blob
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        const file = new File([blob], avatarId, { type: 'image/png' });
-        
-        // Create FormData for upload - use correct endpoint /api/avatars/upload
-        const formData = new FormData();
-        formData.append('avatar', file);
-        formData.append('overwrite_name', avatarId);
-        
-        // Upload the avatar using jQuery with CSRF header
-        const uploadResult = await new Promise((resolve, reject) => {
-            $.ajax({
-                url: '/api/avatars/upload',
-                type: 'POST',
-                data: formData,
-                processData: false,
-                contentType: false,
-                beforeSend: function(xhr) {
-                    // Add CSRF token header
-                    xhr.setRequestHeader('X-CSRF-Token', getRequestHeaders()['X-CSRF-Token'] || '');
-                },
-                success: function(result) {
-                    resolve(result);
-                },
-                error: function(xhr, status, error) {
-                    reject(new Error(`Avatar upload failed: ${xhr.status} ${error}`));
-                },
-            });
-        });
-        
-        console.log('Avatar uploaded:', uploadResult);
-        
-        // Use the path returned from upload
-        const uploadedPath = uploadResult?.path || avatarId;
-        
-        // Set persona name
-        powerUserSettings.personas[uploadedPath] = finalName;
-        
-        // Set persona description with full structure
-        powerUserSettings.persona_descriptions[uploadedPath] = {
-            description: personaText,
-            position: 0,
-            depth: 2,
-            role: 0,
-            lorebook: '',
-            title: '',
-        };
-        
-        // Save settings immediately
-        saveSettingsDebounced();
-        
-        // Emit event to refresh UI
-        if (eventSource && event_types) {
-            await eventSource.emit(event_types.PERSONA_CREATED, {
-                avatarId: uploadedPath,
-                name: finalName,
-                description: personaText,
-                title: '',
-            });
+        // Let /persona-create handle everything (upload + registration + UI refresh)
+        // The avatar argument accepts a data URL
+        if (context.executeSlashCommandsWithOptions) {
+            const createCmd = `/persona-create name=${finalName} select=false avatarPromptResize=false avatar=${avatarDataUrl}`;
+            console.log('Running persona-create for:', finalName);
+            await context.executeSlashCommandsWithOptions(createCmd);
         }
         
-        // Refresh persona list using SillyTavern's built-in function
-        const context = SillyTavern.getContext();
-        if (context.getUserAvatars) {
-            await context.getUserAvatars(true, uploadedPath);
+        // Set description after creation using /persona-update
+        await new Promise(r => setTimeout(r, 300));
+        
+        if (context.executeSlashCommandsWithOptions && personaText) {
+            // Truncate and sanitize description for slash command safety
+            const maxLen = 4000;
+            let desc = personaText.length > maxLen ? personaText.substring(0, maxLen) : personaText;
+            // Replace newlines with literal \n for the command parser
+            desc = desc.replace(/\n/g, '\\n');
+            const updateCmd = `/persona-update persona=${finalName} description=${desc}`;
+            console.log('Setting persona description');
+            await context.executeSlashCommandsWithOptions(updateCmd);
         }
         
-        console.log('Persona created:', { avatarId, name: finalName });
+        console.log('Persona created:', { name: finalName });
+        toastr.success(`Persona "${finalName}" created in SillyTavern!`);
         
-        toastr.success(`Persona "${finalName}" created in SillyTavern! You can now select it in Persona Management.`);
-        
-        // Close the popup
         popup.remove();
     } catch (error) {
         console.error('Error creating persona:', error);
