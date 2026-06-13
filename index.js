@@ -21,8 +21,6 @@ const defaultSettings = {
     lastUsedCharacter: null
 };
 
-let settings = {};
-
 function getSettings() {
     const { extensionSettings } = SillyTavern.getContext();
     if (!extensionSettings[MODULE_NAME]) {
@@ -41,109 +39,23 @@ function saveSettings() {
     saveSettingsDebounced();
 }
 
-jQuery(() => {
-    settings = getSettings();
-    registerSlashCommand();
-    addToolbarButton();
-    console.log(`${EXTENSION_NAME} initialized`);
-});
-
-function registerSlashCommand() {
-    const { SlashCommandParser, SlashCommand } = SillyTavern.getContext();
-
-    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
-        name: 'persona-gen',
-        callback: () => {
-            openPersonaGeneratorPopup();
-            return '';
-        },
-        helpString: 'Open the Persona Generator extension',
-    }));
-}
-
-function addToolbarButton() {
-    setTimeout(() => {
-        try {
-            // Find the toolbar container - look for the drawer with utility buttons
-            const toolbarContainer = document.querySelector('#send_button_wrapper') ||
-                                    document.querySelector('.drawers-container') ||
-                                    document.querySelector('#extensions_settings');
-            
-            if (toolbarContainer) {
-                // Create the toolbar button
-                const buttonWrapper = document.createElement('div');
-                buttonWrapper.id = 'persona_gen_toolbar_wrapper';
-                buttonWrapper.className = 'persona-gen-toolbar-wrapper';
-                
-                const button = document.createElement('button');
-                button.id = 'persona_gen_toolbar_btn';
-                button.className = 'persona_gen_toolbar_button';
-                button.title = 'Open Persona Generator';
-                button.setAttribute('data-tooltip', 'Open Persona Generator');
-                button.innerHTML = '<i class="fa-solid fa-user-plus"></i>';
-                button.addEventListener('click', () => openPersonaGeneratorPopup());
-                
-                buttonWrapper.appendChild(button);
-                
-                // Try to insert after a specific button or at the beginning
-                const firstButton = toolbarContainer.querySelector('button') || toolbarContainer.firstChild;
-                if (firstButton) {
-                    firstButton.parentNode.insertBefore(buttonWrapper, firstButton);
-                } else {
-                    toolbarContainer.appendChild(buttonWrapper);
-                }
-                
-                console.log(`${EXTENSION_NAME} toolbar button added`);
-            } else {
-                console.log(`${EXTENSION_NAME} toolbar container not found, trying alternative...`);
-                addToolbarButtonAlternative();
-            }
-        } catch (error) {
-            console.error('Error adding toolbar button:', error);
-            addToolbarButtonAlternative();
-        }
-    }, 3000);
-}
-
-function addToolbarButtonAlternative() {
-    try {
-        // Look for the sidebar or utility buttons area
-        const sidebar = document.querySelector('#sheld') ||
-                       document.querySelector('.sidebar') ||
-                       document.querySelector('#chat');
-        
-        if (sidebar) {
-            const button = document.createElement('button');
-            button.id = 'persona_gen_floating_btn';
-            button.className = 'persona_gen_floating_button';
-            button.title = 'Open Persona Generator';
-            button.innerHTML = '<i class="fa-solid fa-user-plus"></i><span>Persona</span>';
-            button.addEventListener('click', () => openPersonaGeneratorPopup());
-            
-            sidebar.insertAdjacentElement('beforebegin', button);
-            console.log(`${EXTENSION_NAME} floating button added`);
-        }
-    } catch (error) {
-        console.error('Error adding floating button:', error);
-    }
-}
-
 function openPersonaGeneratorPopup() {
     const existing = document.getElementById('persona-generator-popup');
     if (existing) existing.remove();
 
     const { characters, characterId } = SillyTavern.getContext();
+    const settings = getSettings();
 
     const popup = document.createElement('div');
     popup.id = 'persona-generator-popup';
     popup.className = 'persona-generator-popup';
-    popup.innerHTML = buildPopupHTML(characters, characterId);
+    popup.innerHTML = buildPopupHTML(characters, characterId, settings);
 
     document.body.appendChild(popup);
-    setupPopupEventListeners(popup, characters);
+    setupPopupEventListeners(popup, characters, settings);
 }
 
-function buildPopupHTML(characters, currentCharacterId) {
+function buildPopupHTML(characters, currentCharacterId, settings) {
     const characterOptions = characters.map((char, index) => {
         const selected = index === currentCharacterId ? 'selected' : '';
         return `<option value="${index}" ${selected}>${char.name}</option>`;
@@ -226,7 +138,7 @@ function buildPopupHTML(characters, currentCharacterId) {
     `;
 }
 
-function setupPopupEventListeners(popup, characters) {
+function setupPopupEventListeners(popup, characters, settings) {
     const overlay = popup.querySelector('.persona-generator-overlay');
     const closeBtn = popup.querySelector('#persona-gen-close');
     const generateBtn = popup.querySelector('#persona-gen-generate');
@@ -236,7 +148,7 @@ function setupPopupEventListeners(popup, characters) {
     overlay.addEventListener('click', () => popup.remove());
     closeBtn.addEventListener('click', () => popup.remove());
 
-    generateBtn.addEventListener('click', () => handleGenerate(popup, characters));
+    generateBtn.addEventListener('click', () => handleGenerate(popup, characters, settings));
     saveBtn.addEventListener('click', () => handleSave(popup));
     copyBtn.addEventListener('click', () => handleCopy(popup));
 
@@ -245,7 +157,7 @@ function setupPopupEventListeners(popup, characters) {
     });
 }
 
-async function handleGenerate(popup, characters) {
+async function handleGenerate(popup, characters, settings) {
     const characterSelect = popup.querySelector('#persona-gen-character');
     const genderSelect = popup.querySelector('#persona-gen-gender');
     const ageInput = popup.querySelector('#persona-gen-age');
@@ -567,3 +479,30 @@ function handleCopy(popup) {
         toastr.error('Failed to copy to clipboard.');
     });
 }
+
+// Register slash command and UI elements when SillyTavern is ready
+(function() {
+    function initExtension() {
+        if (typeof SillyTavern === 'undefined') {
+            setTimeout(initExtension, 100);
+            return;
+        }
+
+        const { SlashCommandParser, SlashCommand, eventSource, event_types } = SillyTavern.getContext();
+
+        SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+            name: 'persona-gen',
+            callback: () => {
+                openPersonaGeneratorPopup();
+                return '';
+            },
+            helpString: 'Open the Persona Generator extension',
+        }));
+
+        eventSource.on(event_types.APP_READY, () => {
+            console.log(`${EXTENSION_NAME} loaded successfully`);
+        });
+    }
+
+    initExtension();
+})();
