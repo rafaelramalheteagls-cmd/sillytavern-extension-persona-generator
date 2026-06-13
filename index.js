@@ -480,7 +480,51 @@ function handleCopy(popup) {
     });
 }
 
-// Register slash command and UI elements when SillyTavern is ready
+function addExtensionSettings() {
+    const { renderExtensionTemplateAsync, getContext } = SillyTavern.getContext();
+    
+    const settingsHtml = `
+        <div class="persona-gen-settings-container">
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>Persona Generator</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <div class="persona-gen-setting">
+                        <label for="persona_gen_default_style">Default Style:</label>
+                        <select id="persona_gen_default_style">
+                            <option value="Narrative">Narrative</option>
+                            <option value="Structured" selected>Structured</option>
+                            <option value="Profile">Profile</option>
+                            <option value="Dialogue">Dialogue</option>
+                        </select>
+                    </div>
+                    <div class="persona-gen-setting">
+                        <label for="persona_gen_default_person">Default Person:</label>
+                        <select id="persona_gen_default_person">
+                            <option value="First person" selected>First person</option>
+                            <option value="Third person">Third person</option>
+                        </select>
+                    </div>
+                    <button id="persona_gen_open_btn" class="menu_button">
+                        <i class="fa-solid fa-user-plus"></i>
+                        <span>Open Persona Generator</span>
+                    </button>
+                    <small>Or use <code>/persona-gen</code> in chat</small>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    $('#extensions_settings').append(settingsHtml);
+    
+    $('#persona_gen_open_btn').on('click', () => openPersonaGeneratorPopup());
+    
+    console.log(`${EXTENSION_NAME} settings panel added to Extensions menu`);
+}
+
+// Initialize extension
 (function() {
     function initExtension() {
         if (typeof SillyTavern === 'undefined') {
@@ -500,6 +544,7 @@ function handleCopy(popup) {
         }));
 
         eventSource.on(event_types.APP_READY, () => {
+            addExtensionSettings();
             console.log(`${EXTENSION_NAME} loaded successfully`);
         });
     }
