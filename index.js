@@ -115,9 +115,11 @@ function buildPopupHTML(characters, currentCharacterId, settings) {
         return `<option value="${index}" ${selected}>${char.name}</option>`;
     }).join('');
 
-    const styleOptions = STYLES.map(style => {
-        const selected = style === settings.style ? 'selected' : '';
-        return `<option value="${style}" ${selected}>${style}</option>`;
+    // Build style options from built-in + custom prompts
+    const allPrompts = getAllPrompts();
+    const styleOptions = allPrompts.map(prompt => {
+        const selected = prompt.id === settings.style ? 'selected' : '';
+        return `<option value="${prompt.id}" ${selected}>${prompt.name}</option>`;
     }).join('');
 
     const personOptions = PERSONS.map(person => {
@@ -307,6 +309,27 @@ function buildPrompt(character, options) {
 
     const cardContext = `Name: ${name}\nPersonality: ${personality}\nScenario: ${scenario}\nDescription: ${desc}\nFirst Message: ${firstMes}`;
 
+    // Check if it's a custom prompt
+    if (style && style.startsWith('custom_')) {
+        const settings = getSettings();
+        const customIndex = parseInt(style.replace('custom_', ''));
+        const customPrompt = settings.customPrompts?.[customIndex];
+        if (customPrompt) {
+            // Use custom prompt template
+            let template = customPrompt.userTemplate || '';
+            // Replace placeholders
+            template = template.replace(/{name}/g, name);
+            template = template.replace(/{userPrefs}/g, userPrefs);
+            template = template.replace(/{cardContext}/g, cardContext);
+            // Add system prompt if provided
+            if (customPrompt.systemPrompt) {
+                return `${customPrompt.systemPrompt}\n\n${template}`;
+            }
+            return template;
+        }
+    }
+
+    // Built-in prompts
     switch (style) {
         case 'Narrative':
             return buildNarrativePrompt(name, userPrefs, cardContext, person);
