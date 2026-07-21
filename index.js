@@ -18,8 +18,62 @@ const defaultSettings = {
     age: '25',
     species: 'Human',
     userDescription: '',
-    lastUsedCharacter: null
+    lastUsedCharacter: null,
+    customPrompts: []
 };
+
+function getAllPrompts() {
+    const settings = getSettings();
+    // Built-in prompts
+    const builtIn = [
+        { id: 'Narrative', name: 'Narrative', builtIn: true },
+        { id: 'Structured', name: 'Structured', builtIn: true },
+        { id: 'Profile', name: 'Profile', builtIn: true },
+        { id: 'Dialogue', name: 'Dialogue', builtIn: true },
+    ];
+    // Custom prompts from settings
+    const custom = (settings.customPrompts || []).map((p, i) => ({
+        id: `custom_${i}`,
+        name: p.name,
+        builtIn: false,
+        systemPrompt: p.systemPrompt || '',
+        userTemplate: p.userTemplate || ''
+    }));
+    return [...builtIn, ...custom];
+}
+
+function getPromptById(id) {
+    const settings = getSettings();
+    if (id.startsWith('custom_')) {
+        const index = parseInt(id.replace('custom_', ''));
+        return settings.customPrompts?.[index] || null;
+    }
+    // Built-in prompts don't store templates, they use the hardcoded functions
+    return null;
+}
+
+function saveCustomPrompt(prompt) {
+    const settings = getSettings();
+    if (!settings.customPrompts) settings.customPrompts = [];
+    settings.customPrompts.push(prompt);
+    saveSettings();
+}
+
+function updateCustomPrompt(index, prompt) {
+    const settings = getSettings();
+    if (settings.customPrompts && settings.customPrompts[index]) {
+        settings.customPrompts[index] = prompt;
+        saveSettings();
+    }
+}
+
+function deleteCustomPrompt(index) {
+    const settings = getSettings();
+    if (settings.customPrompts && settings.customPrompts[index]) {
+        settings.customPrompts.splice(index, 1);
+        saveSettings();
+    }
+}
 
 function getSettings() {
     const { extensionSettings } = SillyTavern.getContext();
@@ -924,6 +978,253 @@ function handleEditCopy(popup) {
     });
 }
 
+function openPromptEditor() {
+    const existing = document.getElementById('persona-prompt-editor-popup');
+    if (existing) existing.remove();
+
+    const popup = document.createElement('div');
+    popup.id = 'persona-prompt-editor-popup';
+    popup.className = 'persona-generator-popup';
+    popup.innerHTML = buildPromptEditorHTML();
+
+    document.body.appendChild(popup);
+    setupPromptEditorEventListeners(popup);
+}
+
+function buildPromptEditorHTML() {
+    const prompts = getAllPrompts();
+    
+    const promptListHTML = prompts.map((prompt, index) => `
+        <div class="prompt-item" data-id="${prompt.id}">
+            <div class="prompt-item-header">
+                <span class="prompt-name">${prompt.name}</span>
+                ${prompt.builtIn 
+                    ? '<span class="prompt-badge built-in">Built-in</span>'
+                    : `<div class="prompt-actions">
+                        <button class="prompt-edit-btn" data-index="${index}" title="Edit">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button class="prompt-delete-btn" data-index="${index}" title="Delete">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>`
+                }
+            </div>
+        </div>
+    `).join('');
+
+    return `
+        <div class="persona-generator-overlay"></div>
+        <div class="persona-generator-modal" style="max-width: 700px;">
+            <div class="persona-generator-header">
+                <h2>Edit Prompts</h2>
+                <button class="persona-generator-close" id="prompt-editor-close">&times;</button>
+            </div>
+            
+            <div class="persona-generator-content">
+                <div class="persona-generator-section">
+                    <label>Available Prompts:</label>
+                    <div class="prompt-list" id="prompt-list">
+                        ${promptListHTML}
+                    </div>
+                </div>
+
+                <div class="persona-generator-actions">
+                    <button id="prompt-editor-add" class="persona-generator-btn primary">
+                        <i class="fa-solid fa-plus"></i> Add New Prompt
+                    </button>
+                </div>
+
+                <div class="persona-generator-section" id="prompt-editor-section" style="display: none;">
+                    <label id="prompt-editor-label">Edit Prompt:</label>
+                    <div class="persona-generator-section">
+                        <label>Prompt Name:</label>
+                        <input type="text" id="prompt-editor-name" placeholder="My Custom Prompt" />
+                    </div>
+                    <div class="persona-generator-section">
+                        <label>System Prompt (instructions for the AI):</label>
+                        <textarea id="prompt-editor-system" rows="6" placeholder="You are an expert persona designer..."></textarea>
+                    </div>
+                    <div class="persona-generator-section">
+                        <label>User Template (use {name}, {userPrefs}, {cardContext} as placeholders):</label>
+                        <textarea id="prompt-editor-template" rows="8" placeholder="Create a persona for the user who will interact with {name}..."></textarea>
+                    </div>
+                    <div class="persona-generator-result-actions">
+                        <button id="prompt-editor-save" class="persona-generator-btn primary">
+                            <i class="fa-solid fa-save"></i> Save Prompt
+                        </button>
+                        <button id="prompt-editor-cancel" class="persona-generator-btn secondary">
+                            <i class="fa-solid fa-xmark"></i> Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function setupPromptEditorEventListeners(popup) {
+    const overlay = popup.querySelector('.persona-generator-overlay');
+    const closeBtn = popup.querySelector('#prompt-editor-close');
+    const addBtn = popup.querySelector('#prompt-editor-add');
+    const saveBtn = popup.querySelector('#prompt-editor-save');
+    const cancelBtn = popup.querySelector('#prompt-editor-cancel');
+
+    overlay.addEventListener('click', () => popup.remove());
+    closeBtn.addEventListener('click', () => popup.remove());
+    
+    addBtn.addEventListener('click', () => {
+        showPromptEditor(popup, null, -1);
+    });
+    
+    saveBtn.addEventListener('click', () => handleSavePrompt(popup));
+    cancelBtn.addEventListener('click', () => {
+        popup.querySelector('#prompt-editor-section').style.display = 'none';
+    });
+
+    // Edit buttons
+    popup.querySelectorAll('.prompt-edit-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.dataset.index);
+            const prompts = getAllPrompts();
+            const prompt = prompts[index];
+            if (prompt && !prompt.builtIn) {
+                showPromptEditor(popup, prompt, index);
+            }
+        });
+    });
+
+    // Delete buttons
+    popup.querySelectorAll('.prompt-delete-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.dataset.index);
+            const prompts = getAllPrompts();
+            const prompt = prompts[index];
+            if (prompt && !prompt.builtIn && confirm(`Delete prompt "${prompt.name}"?`)) {
+                const customIndex = parseInt(prompt.id.replace('custom_', ''));
+                deleteCustomPrompt(customIndex);
+                refreshPromptList(popup);
+                toastr.success('Prompt deleted!');
+            }
+        });
+    });
+
+    popup.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') popup.remove();
+    });
+}
+
+function showPromptEditor(popup, prompt, index) {
+    const section = popup.querySelector('#prompt-editor-section');
+    const label = popup.querySelector('#prompt-editor-label');
+    const nameInput = popup.querySelector('#prompt-editor-name');
+    const systemTextarea = popup.querySelector('#prompt-editor-system');
+    const templateTextarea = popup.querySelector('#prompt-editor-template');
+
+    if (prompt) {
+        label.textContent = 'Edit Prompt:';
+        nameInput.value = prompt.name;
+        systemTextarea.value = prompt.systemPrompt || '';
+        templateTextarea.value = prompt.userTemplate || '';
+        section.dataset.editIndex = index;
+        section.dataset.customIndex = prompt.id.startsWith('custom_') ? prompt.id.replace('custom_', '') : '';
+    } else {
+        label.textContent = 'Add New Prompt:';
+        nameInput.value = '';
+        systemTextarea.value = '';
+        templateTextarea.value = '';
+        section.dataset.editIndex = '-1';
+        section.dataset.customIndex = '';
+    }
+
+    section.style.display = 'block';
+}
+
+function handleSavePrompt(popup) {
+    const section = popup.querySelector('#prompt-editor-section');
+    const nameInput = popup.querySelector('#prompt-editor-name');
+    const systemTextarea = popup.querySelector('#prompt-editor-system');
+    const templateTextarea = popup.querySelector('#prompt-editor-template');
+
+    const name = nameInput.value.trim();
+    const systemPrompt = systemTextarea.value.trim();
+    const userTemplate = templateTextarea.value.trim();
+
+    if (!name) {
+        toastr.warning('Please enter a prompt name.');
+        return;
+    }
+
+    const promptData = { name, systemPrompt, userTemplate };
+    const editIndex = parseInt(section.dataset.editIndex);
+    const customIndex = section.dataset.customIndex;
+
+    if (customIndex !== '' && !isNaN(parseInt(customIndex))) {
+        // Update existing custom prompt
+        updateCustomPrompt(parseInt(customIndex), promptData);
+        toastr.success('Prompt updated!');
+    } else {
+        // Add new custom prompt
+        saveCustomPrompt(promptData);
+        toastr.success('Prompt added!');
+    }
+
+    section.style.display = 'none';
+    refreshPromptList(popup);
+}
+
+function refreshPromptList(popup) {
+    const list = popup.querySelector('#prompt-list');
+    const prompts = getAllPrompts();
+    
+    list.innerHTML = prompts.map((prompt, index) => `
+        <div class="prompt-item" data-id="${prompt.id}">
+            <div class="prompt-item-header">
+                <span class="prompt-name">${prompt.name}</span>
+                ${prompt.builtIn 
+                    ? '<span class="prompt-badge built-in">Built-in</span>'
+                    : `<div class="prompt-actions">
+                        <button class="prompt-edit-btn" data-index="${index}" title="Edit">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button class="prompt-delete-btn" data-index="${index}" title="Delete">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>`
+                }
+            </div>
+        </div>
+    `).join('');
+
+    // Re-attach event listeners
+    popup.querySelectorAll('.prompt-edit-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.dataset.index);
+            const p = prompts[index];
+            if (p && !p.builtIn) {
+                showPromptEditor(popup, p, index);
+            }
+        });
+    });
+
+    popup.querySelectorAll('.prompt-delete-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.dataset.index);
+            const p = prompts[index];
+            if (p && !p.builtIn && confirm(`Delete prompt "${p.name}"?`)) {
+                const customIndex = parseInt(p.id.replace('custom_', ''));
+                deleteCustomPrompt(customIndex);
+                refreshPromptList(popup);
+                toastr.success('Prompt deleted!');
+            }
+        });
+    });
+}
+
 function addToolbarButton() {
     // Find the Chat Options menu (hamburger menu)
     const optionsContent = document.querySelector('.options-content');
@@ -1013,6 +1314,10 @@ function addExtensionSettings() {
                         <i class="fa-solid fa-user-plus"></i>
                         <span>Open Persona Generator</span>
                     </button>
+                    <button id="persona_gen_edit_prompts_btn" class="menu_button">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                        <span>Edit Prompts</span>
+                    </button>
                     <small>Or use <code>/persona-gen</code> in chat</small>
                 </div>
             </div>
@@ -1024,6 +1329,7 @@ function addExtensionSettings() {
     $settings.append(settingsHtml);
     
     $('#persona_gen_open_btn').on('click', () => openPersonaGeneratorPopup());
+    $('#persona_gen_edit_prompts_btn').on('click', () => openPromptEditor());
     
     console.log(`${EXTENSION_NAME} settings panel added to Extensions menu`);
 }

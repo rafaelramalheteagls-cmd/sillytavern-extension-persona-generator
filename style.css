@@ -455,3 +455,83 @@
         font-size: 16px; /* Prevents zoom on iOS */
     }
 }
+
+/* Prompt Editor Styles */
+.prompt-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 8px;
+    background: #0d1b2a;
+    border: 1px solid #2d2d44;
+    border-radius: 6px;
+}
+
+.prompt-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: #16213e;
+    border: 1px solid #2d2d44;
+    border-radius: 6px;
+    transition: border-color 0.2s;
+}
+
+.prompt-item:hover {
+    border-color: #e94560;
+}
+
+.prompt-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.prompt-name {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.prompt-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.prompt-badge.built-in {
+    background: #0f3460;
+    color: #888;
+}
+
+.prompt-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.prompt-edit-btn,
+.prompt-delete-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    font-size: 12px;
+}
+
+.prompt-edit-btn:hover {
+    background: #0f3460;
+    color: #e94560;
+}
+
+.prompt-delete-btn:hover {
+    background: #e94560;
+    color: #fff;
+}
