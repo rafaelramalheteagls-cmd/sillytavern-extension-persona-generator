@@ -255,7 +255,7 @@ function buildPopupHTML(characters, currentCharacterId, settings) {
                 <button class="persona-generator-close" id="persona-gen-close">&times;</button>
             </div>
             
-            <div class="persona-generator-content">
+            <div class="persona-generator-content" role="region" aria-label="Persona generator form" tabindex="0">
                 <div class="persona-generator-section">
                     <label>Character Card:</label>
                     <select id="persona-gen-character">${characterOptions}</select>
@@ -509,6 +509,9 @@ async function handleGenerate(popup, characters, settings) {
             const draft = { ...baseDraft, text: variations[0], variations: [...variations], activeVariation: 0 };
             saveDraft('generationDraft', draft);
             showGenerationDraft(popup, draft);
+            if (variations.length === 1) {
+                popup.querySelector('#persona-gen-result-section').scrollIntoView({ block: 'start' });
+            }
         }
         if (variations.length < variationCount) toastr.info('Identical proposals were combined.');
         else toastr.success('Persona generated successfully!');
@@ -1108,7 +1111,7 @@ function buildEditPopupHTML(characters) {
                 <button class="persona-generator-close" id="persona-edit-close">&times;</button>
             </div>
             
-            <div class="persona-generator-content">
+            <div class="persona-generator-content" role="region" aria-label="Persona editor form" tabindex="0">
                 <div class="persona-generator-section">
                     <label for="persona-edit-search">Search personas</label>
                     <input id="persona-edit-search" type="search" placeholder="Name or description">
@@ -1890,7 +1893,7 @@ function buildPromptEditorHTML() {
                 <button class="persona-generator-close" id="prompt-editor-close">&times;</button>
             </div>
             
-            <div class="persona-generator-content">
+            <div class="persona-generator-content" role="region" aria-label="Prompt editor form" tabindex="0">
                 <div class="persona-generator-section">
                     <label>Available Prompts:</label>
                     <div class="prompt-list" id="prompt-list">

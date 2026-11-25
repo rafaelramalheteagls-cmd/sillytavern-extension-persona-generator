@@ -4,10 +4,7 @@
 
 .persona-generator-popup {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     z-index: 10000;
     display: flex;
     align-items: center;
@@ -33,7 +30,9 @@
     border-radius: 12px;
     width: 100%;
     max-width: 600px;
+    box-sizing: border-box;
     max-height: 90vh;
+    max-height: min(100%, 90dvh);
     overflow: hidden;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     display: flex;
@@ -43,6 +42,7 @@
 
 .persona-generator-header {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: space-between;
     padding: 16px 20px;
@@ -75,8 +75,13 @@
 
 .persona-generator-content {
     padding: 20px;
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    min-height: 0;
+    min-width: 0;
     overflow-y: auto;
-    flex: 1;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+    flex: 1 1 auto;
 }
 
 .persona-generator-section {
@@ -200,7 +205,7 @@
 
 /* Scrollbar styles */
 .persona-generator-content::-webkit-scrollbar {
-    width: 8px;
+    width: 12px;
 }
 
 .persona-generator-content::-webkit-scrollbar-track {
@@ -209,33 +214,12 @@
 }
 
 .persona-generator-content::-webkit-scrollbar-thumb {
-    background: #2d2d44;
+    background: #62627c;
     border-radius: 4px;
 }
 
 .persona-generator-content::-webkit-scrollbar-thumb:hover {
-    background: #3d3d54;
-}
-
-/* Responsive */
-@media (max-width: 600px) {
-    .persona-generator-modal {
-        width: 95%;
-        max-height: 90vh;
-    }
-
-    .persona-generator-row {
-        flex-direction: column;
-        gap: 12px;
-    }
-
-    .persona-generator-actions {
-        flex-direction: column;
-    }
-
-    .persona-generator-btn {
-        width: 100%;
-    }
+    background: #8585a1;
 }
 
 /* Toolbar Button Styles */
@@ -415,7 +399,8 @@
     
     .persona-generator-modal {
         max-width: 100%;
-        max-height: 95vh;
+        max-height: 100%;
+        max-height: min(100%, 100dvh);
         border-radius: 12px 12px 0 0;
         margin-bottom: 0;
     }
@@ -430,6 +415,7 @@
     
     .persona-generator-content {
         padding: 16px;
+        padding-bottom: max(16px, env(safe-area-inset-bottom));
     }
     
     .persona-generator-row {
