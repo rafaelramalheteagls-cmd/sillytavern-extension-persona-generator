@@ -560,3 +560,30 @@
 #persona-edit-copy-name {
     margin-top: 4px;
 }
+
+.persona-generator-modal .persona-generator-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.persona-generator-modal .persona-generator-checkbox input {
+    width: auto;
+}
+
+.persona-generator-modal details summary {
+    cursor: pointer;
+    margin-bottom: 8px;
+}
+
+#persona-edit-comparison pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 0 0 10px;
+}
+
+#persona-edit-fact-status {
+    color: #ff9eaf;
+    overflow-wrap: anywhere;
+}

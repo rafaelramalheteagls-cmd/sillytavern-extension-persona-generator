@@ -73,6 +73,8 @@ Generate and edit personas from character cards using AI, directly inside SillyT
 4. **Refine** - Edit the draft directly. With **Structured**, choose an available section and click **Regenerate Section** to replace only that section.
 5. **Save** - Click **Create in SillyTavern** to save the persona.
 
+Open **Group chat** to add other character cards and specify relationships using their names. The same card-field settings apply to each selected character.
+
 Set an optional output token limit before generating. The model receives this limit and the draft displays an estimated count for the whole description. Section regeneration is a separate request, so check the total again afterward.
 
 ### Editing a Persona
@@ -81,6 +83,12 @@ Set an optional output token limit before generating. The model receives this li
 2. **Describe Changes** - Tell the AI what changes you want (e.g., "Make her a doctor", "Change age to 30")
 3. **Generate** - Click "Generate Changes" to get the modified description
 4. **Save** - Use **Save Changes** to update the original description, or enter a name and choose **Save as New Persona** to create a separate persona with the edited description. The new persona uses the generator’s placeholder avatar and SillyTavern’s default persona settings.
+
+Use **Search personas**, **Favorites only**, or **Character of origin** to find an existing persona. Origin is recorded for new personas and adaptations created by the extension.
+
+Choose **Adapt to a different character** to reuse an existing identity in another setting. Save the adaptation as a new persona. Use **Protected facts** to list phrases that must appear in the edited description. The editor checks phrase presence, ignoring case and whitespace differences.
+
+Open **Compare changes** to see added and removed lines. The editor keeps the last ten descriptions saved through the extension. Open **Previous versions**, preview a version, and select **Restore This Version** to restore it.
 
 The latest generator draft and the latest edit draft are retained in your SillyTavern settings. Reopen the relevant dialog to continue, or select **Discard Draft** to clear it.
 

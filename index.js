@@ -44,6 +44,7 @@ const defaultSettings = {
     tokenBudget: '',
     generationDraft: null,
     editDraft: null,
+    personaLibrary: {},
     customPrompts: []
 };
 
@@ -66,6 +67,37 @@ async function generatePersonaText(prompt, tokenBudget = null) {
 function saveDraft(key, draft) {
     getSettings()[key] = draft;
     SillyTavern.getContext().saveSettingsDebounced();
+}
+
+function personaRecord(avatarId) {
+    const library = getSettings().personaLibrary;
+    return Object.hasOwn(library, avatarId) ? library[avatarId] : {};
+}
+
+function savePersonaRecord(avatarId, changes) {
+    const settings = getSettings();
+    settings.personaLibrary = {
+        ...settings.personaLibrary,
+        [avatarId]: { ...personaRecord(avatarId), ...changes },
+    };
+    SillyTavern.getContext().saveSettingsDebounced();
+}
+
+function protectedFacts(value) {
+    return [...new Set(value.split('\n').map(line => line.trim()).filter(Boolean))];
+}
+
+function missingFacts(description, facts) {
+    const normalize = text => text.normalize('NFC').toLowerCase().replace(/\s+/g, ' ');
+    const text = normalize(description);
+    return facts.filter(fact => !text.includes(normalize(fact)));
+}
+
+function characterCardContext(character, fields = Object.keys(CARD_FIELDS)) {
+    return [
+        `Name: ${character.name || 'Unknown'}`,
+        ...fields.map(key => `${CARD_FIELDS[key]}: ${character[key] || ''}`),
+    ].join('\n');
 }
 
 async function updateTokenStatus(popup) {
@@ -264,6 +296,13 @@ function buildPopupHTML(characters, currentCharacterId, settings) {
                         <input id="persona-gen-opening-hook" type="text" value="${escapeHTML(settings.openingHook)}" placeholder="What does the persona want in the first scene?">
                     </div>
                 </div>
+                <details class="persona-generator-section">
+                    <summary>Group chat</summary>
+                    <label for="persona-gen-group">Additional characters</label>
+                    <select id="persona-gen-group" multiple size="4">${characters.map((character, index) => `<option value="${index}">${escapeHTML(character.name)}</option>`).join('')}</select>
+                    <label for="persona-gen-group-relationships">Give each named character a relationship (optional)</label>
+                    <textarea id="persona-gen-group-relationships" rows="3" placeholder="Mira: childhood friend&#10;Theo: uneasy ally"></textarea>
+                </details>
                 <fieldset class="persona-generator-section persona-generator-card-fields">
                     <legend>Include from the character card</legend>
                     ${Object.entries(CARD_FIELDS).map(([key, label]) => `
@@ -379,6 +418,10 @@ async function handleGenerate(popup, characters, settings) {
     };
 
     const character = characters[characterId];
+    options.groupCharacters = Array.from(popup.querySelector('#persona-gen-group').selectedOptions, option => Number(option.value))
+        .filter(id => id !== characterId && characters[id])
+        .map(id => characters[id]);
+    options.groupRelationships = popup.querySelector('#persona-gen-group-relationships').value.trim();
     if (!character) {
         toastr.warning('Select a character first.');
         return;
@@ -403,7 +446,12 @@ async function handleGenerate(popup, characters, settings) {
         const text = await generatePersonaText(prompt, Number(budget.value) || null);
         if (!popup.isConnected) return;
 
-        const draft = { text, style: options.style, characterName: character.name || 'Character' };
+        const draft = {
+            text,
+            style: options.style,
+            characterName: character.name || 'Character',
+            sources: [character, ...options.groupCharacters].map(card => card.name || 'Character'),
+        };
         saveDraft('generationDraft', draft);
         showGenerationDraft(popup, draft);
         toastr.success('Persona generated successfully!');
@@ -511,12 +559,13 @@ function buildPrompt(character, options) {
     ].filter(Boolean).join('\n');
 
     const includedFields = options.cardFields ?? Object.keys(CARD_FIELDS);
-    const cardContext = [
-        `Name: ${name}`,
-        ...Object.entries(CARD_FIELDS)
-            .filter(([key]) => includedFields.includes(key))
-            .map(([key, label]) => `${label}: ${character[key] || ''}`),
-    ].join('\n');
+    const groupCharacters = options.groupCharacters ?? [];
+    const groupContext = groupCharacters.length
+        ? `\n\nAdditional group characters:\n${groupCharacters.map(card => characterCardContext(card, includedFields)).join('\n\n')}`
+            + `\nGive the persona a reason to join the group scene and a distinct relationship with each named character.`
+            + (options.groupRelationships ? `\nRequested relationships:\n${options.groupRelationships}` : '')
+        : '';
+    const cardContext = characterCardContext(character, includedFields) + groupContext;
 
     // Check if it's a custom prompt
     if (style && style.startsWith('custom_')) {
@@ -803,7 +852,9 @@ async function handleSave(popup) {
     popup.dataset.saving = 'true';
     setGenerationBusy(popup, 'Saving...');
     try {
-        await createPersona(name, description);
+        const avatarId = await createPersona(name, description);
+        const draft = getSettings().generationDraft;
+        savePersonaRecord(avatarId, { sources: draft?.sources ?? [resultTextarea.dataset.characterName].filter(Boolean) });
         saveDraft('generationDraft', null);
         popup.remove();
     } catch (error) {
@@ -833,6 +884,7 @@ async function createPersona(name, description) {
         avatar: canvas.toDataURL('image/png'),
     });
     if (!avatarId) throw new Error('SillyTavern did not return a new persona ID.');
+    return avatarId;
 }
 
 function handleDownload(popup) {
@@ -885,27 +937,20 @@ function openEditPersonaPopup() {
     if (existing?.dataset.saving) return;
     if (existing) existing.remove();
 
-    const { powerUserSettings } = SillyTavern.getContext();
+    const { powerUserSettings, characters } = SillyTavern.getContext();
     const personas = powerUserSettings?.personas || {};
     const personaDescriptions = powerUserSettings?.persona_descriptions || {};
 
     const popup = document.createElement('div');
     popup.id = 'persona-edit-popup';
     popup.className = 'persona-generator-popup';
-    popup.innerHTML = buildEditPopupHTML(personas, personaDescriptions);
+    popup.innerHTML = buildEditPopupHTML(characters);
 
     document.body.appendChild(popup);
-    setupEditPopupEventListeners(popup, personas, personaDescriptions);
+    setupEditPopupEventListeners(popup, personas, personaDescriptions, characters);
 }
 
-function buildEditPopupHTML(personas, personaDescriptions) {
-    const personaOptions = Object.entries(personas).map(([avatarId, name]) => {
-        return `<option value="${escapeHTML(avatarId)}">${escapeHTML(name)}</option>`;
-    }).join('');
-
-    const firstAvatarId = Object.keys(personas)[0] || '';
-    const firstDescription = firstAvatarId ? (personaDescriptions[firstAvatarId]?.description || '') : '';
-
+function buildEditPopupHTML(characters) {
     return `
         <div class="persona-generator-overlay"></div>
         <div class="persona-generator-modal">
@@ -916,17 +961,37 @@ function buildEditPopupHTML(personas, personaDescriptions) {
             
             <div class="persona-generator-content">
                 <div class="persona-generator-section">
-                    <label>Select Persona:</label>
-                    <select id="persona-edit-select">${personaOptions}</select>
+                    <label for="persona-edit-search">Search personas</label>
+                    <input id="persona-edit-search" type="search" placeholder="Name or description">
+                    <label for="persona-edit-source">Character of origin</label>
+                    <select id="persona-edit-source"></select>
+                    <label class="persona-generator-checkbox"><input id="persona-edit-favorites" type="checkbox"> Favorites only</label>
+                    <label for="persona-edit-select">Select Persona</label>
+                    <select id="persona-edit-select"></select>
+                    <small id="persona-edit-empty" role="status" hidden>No personas match these filters.</small>
+                    <label class="persona-generator-checkbox"><input id="persona-edit-favorite" type="checkbox"> Favorite selected persona</label>
                 </div>
 
                 <div class="persona-generator-section">
                     <label>Current Description:</label>
-                    <textarea id="persona-edit-current" rows="6" readonly>${escapeHTML(firstDescription)}</textarea>
+                    <textarea id="persona-edit-current" rows="6" readonly></textarea>
+                    <label for="persona-edit-facts">Protected facts (one phrase per line)</label>
+                    <textarea id="persona-edit-facts" rows="3" placeholder="Use the exact phrases that should be retained"></textarea>
+                    <details id="persona-edit-history-controls" hidden>
+                        <summary>Previous versions</summary>
+                        <label for="persona-edit-history">Version to preview</label>
+                        <select id="persona-edit-history"></select>
+                        <button id="persona-edit-preview-history" class="persona-generator-btn secondary">Preview Version</button>
+                    </details>
                 </div>
 
                 <div class="persona-generator-section">
-                    <label>Describe the changes you want:</label>
+                    <label for="persona-edit-target">Adapt to a different character (optional)</label>
+                    <select id="persona-edit-target">
+                        <option value="">Keep current context</option>
+                        ${characters.map((card, index) => `<option value="${index}">${escapeHTML(card.name)}</option>`).join('')}
+                    </select>
+                    <label for="persona-edit-request">Describe the changes you want, or add instructions for the adaptation</label>
                     <textarea id="persona-edit-request" rows="4" placeholder="Example: Make the persona more cheerful, add that she is a doctor, change age to 30..."></textarea>
                 </div>
 
@@ -941,7 +1006,7 @@ function buildEditPopupHTML(personas, personaDescriptions) {
                     <textarea id="persona-edit-result" rows="8"></textarea>
                     <div class="persona-generator-result-actions">
                         <button id="persona-edit-save" class="persona-generator-btn primary">
-                            <i class="fa-solid fa-save"></i> Save Changes
+                            <i class="fa-solid fa-save"></i> <span>Save Changes</span>
                         </button>
                         <button id="persona-edit-save-copy" class="persona-generator-btn secondary">Save as New Persona</button>
                         <button id="persona-edit-discard" class="persona-generator-btn secondary">Discard Draft</button>
@@ -955,7 +1020,7 @@ function buildEditPopupHTML(personas, personaDescriptions) {
     `;
 }
 
-function setupEditPopupEventListeners(popup, personas, personaDescriptions) {
+function setupEditPopupEventListeners(popup, personas, personaDescriptions, characters) {
     const overlay = popup.querySelector('.persona-generator-overlay');
     const closeBtn = popup.querySelector('#persona-edit-close');
     const select = popup.querySelector('#persona-edit-select');
@@ -970,49 +1035,152 @@ function setupEditPopupEventListeners(popup, personas, personaDescriptions) {
     overlay.addEventListener('click', close);
     closeBtn.addEventListener('click', close);
 
+    const fields = id => popup.querySelector(`#persona-edit-${id}`);
+    const history = fields('history');
+    const sourceFilter = fields('source');
+    const favorites = fields('favorites');
+    const favorite = fields('favorite');
+    const search = fields('search');
+    const facts = fields('facts');
+
     function showSelection() {
         const avatarId = select.value;
+        const record = personaRecord(avatarId);
         const draft = getSettings().editDraft;
         currentTextarea.value = personaDescriptions[avatarId]?.description || '';
         hideEditDraft(popup);
-        popup.querySelector('#persona-edit-request').value = '';
-        if (draft?.avatarId === avatarId) showEditDraft(popup, draft);
+        fields('request').value = '';
+        fields('target').value = '';
+        facts.value = (record.facts ?? []).join('\n');
+        favorite.checked = Boolean(record.favorite);
+        favorite.disabled = !avatarId;
+        facts.disabled = !avatarId;
+        generateBtn.disabled = !avatarId;
+        fields('empty').hidden = Boolean(avatarId);
+        history.replaceChildren(...(record.history ?? []).map((version, index) => {
+            const date = new Date(version.timestamp).toLocaleString();
+            return new Option(date, String(index));
+        }));
+        fields('history-controls').hidden = history.options.length === 0;
+        if (draft?.avatarId === avatarId) showEditDraft(popup, draft, characters);
     }
 
+    function filterPersonas(preferred = select.value) {
+        const query = search.value.trim().toLocaleLowerCase();
+        const sources = [...new Set(Object.keys(personas).flatMap(id => personaRecord(id).sources ?? []))].sort();
+        const source = sourceFilter.value;
+        sourceFilter.replaceChildren(new Option('All characters', ''), ...sources.map(name => new Option(name, name)));
+        if (sources.includes(source)) sourceFilter.value = source;
+        const filtered = Object.entries(personas).filter(([id, name]) => {
+            const record = personaRecord(id);
+            const text = `${name} ${personaDescriptions[id]?.description ?? ''}`.toLocaleLowerCase();
+            return text.includes(query) && (!favorites.checked || record.favorite)
+                && (!sourceFilter.value || record.sources?.includes(sourceFilter.value));
+        });
+        select.replaceChildren(...filtered.map(([id, name]) => new Option(name, id)));
+        if (filtered.some(([id]) => id === preferred)) select.value = preferred;
+        showSelection();
+    }
+
+    for (const field of [search, sourceFilter, favorites]) {
+        field.addEventListener('input', () => filterPersonas());
+    }
     select.addEventListener('change', showSelection);
-    generateBtn.addEventListener('click', () => handleEditGenerate(popup, personas, personaDescriptions));
-    saveBtn.addEventListener('click', () => handleEditSave(popup));
-    popup.querySelector('#persona-edit-save-copy').addEventListener('click', () => handleEditSave(popup, true));
+    favorite.addEventListener('change', () => {
+        if (!select.value) return;
+        savePersonaRecord(select.value, { favorite: favorite.checked });
+        if (favorites.checked) filterPersonas();
+    });
+    facts.addEventListener('input', () => {
+        if (!select.value) return;
+        savePersonaRecord(select.value, { facts: protectedFacts(facts.value) });
+        updateEditReview(popup);
+    });
+    fields('preview-history').addEventListener('click', () => {
+        const avatarId = select.value;
+        const version = personaRecord(avatarId).history?.[Number(history.value)];
+        if (!version || generateBtn.disabled) return;
+        const draft = {
+            avatarId,
+            text: version.text,
+            request: '',
+            copyName: `${personas[avatarId]} (Copy)`,
+            restoreVersion: true,
+        };
+        saveDraft('editDraft', draft);
+        showEditDraft(popup, draft, characters);
+    });
+    generateBtn.addEventListener('click', () => handleEditGenerate(popup, personas, personaDescriptions, characters));
+    saveBtn.addEventListener('click', async () => {
+        if (await handleEditSave(popup)) filterPersonas();
+    });
+    fields('save-copy').addEventListener('click', async () => {
+        if (await handleEditSave(popup, true)) filterPersonas();
+    });
     copyBtn.addEventListener('click', () => handleEditCopy(popup));
-    popup.querySelector('#persona-edit-discard').addEventListener('click', () => {
+    fields('discard').addEventListener('click', () => {
         if (generateBtn.disabled || !confirm('Discard this edit draft?')) return;
         saveDraft('editDraft', null);
         hideEditDraft(popup);
     });
     for (const [id, key] of [['result', 'text'], ['copy-name', 'copyName'], ['request', 'request']]) {
-        const input = popup.querySelector(`#persona-edit-${id}`);
+        const input = fields(id);
         input.addEventListener('input', () => {
             const draft = getSettings().editDraft;
             if (draft?.avatarId === select.value) saveDraft('editDraft', { ...draft, [key]: input.value });
+            if (id === 'result') updateEditReview(popup);
         });
     }
-
-    const draft = getSettings().editDraft;
-    if (draft && Object.hasOwn(personas, draft.avatarId)) select.value = draft.avatarId;
-    showSelection();
+    filterPersonas(getSettings().editDraft?.avatarId);
 
     popup.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') close();
     });
 }
 
-function showEditDraft(popup, draft) {
+function showEditDraft(popup, draft, characters) {
     const result = popup.querySelector('#persona-edit-result');
     result.dataset.avatarId = draft.avatarId;
     result.value = draft.text;
     popup.querySelector('#persona-edit-request').value = draft.request;
+    const targetIndex = characters.findIndex(card => draft.targetId && (card.avatar || card.name) === draft.targetId);
+    popup.querySelector('#persona-edit-target').value = targetIndex >= 0 ? String(targetIndex) : '';
     popup.querySelector('#persona-edit-copy-name').value = draft.copyName;
     popup.querySelector('#persona-edit-result-section').style.display = 'block';
+    updateEditReview(popup);
+}
+
+function updateEditReview(popup) {
+    const original = popup.querySelector('#persona-edit-current').value;
+    const result = popup.querySelector('#persona-edit-result');
+    const missing = missingFacts(result.value, protectedFacts(popup.querySelector('#persona-edit-facts').value));
+    const status = popup.querySelector('#persona-edit-fact-status');
+    status.textContent = result.dataset.avatarId && missing.length ? `Missing protected phrases: ${missing.join('; ')}` : '';
+
+    const before = original.split('\n');
+    const after = result.value.split('\n');
+    popup.querySelector('#persona-edit-removed').textContent = differentLines(before, after).join('\n');
+    popup.querySelector('#persona-edit-added').textContent = differentLines(after, before).join('\n');
+    const draft = getSettings().editDraft;
+    const adaptation = result.dataset.avatarId && draft?.targetSource;
+    const restore = result.dataset.avatarId && draft?.restoreVersion;
+    const save = popup.querySelector('#persona-edit-save');
+    save.disabled = Boolean(adaptation);
+    save.querySelector('span').textContent = restore ? 'Restore This Version' : 'Save Changes';
+    popup.querySelector('#persona-edit-result-mode').textContent = adaptation
+        ? `Adaptation for ${adaptation}. Save it as a new persona to keep the original.`
+        : '';
+}
+
+function differentLines(lines, comparison) {
+    const occurrences = new Map();
+    for (const line of comparison) occurrences.set(line, (occurrences.get(line) ?? 0) + 1);
+    return lines.filter(line => {
+        const count = occurrences.get(line) ?? 0;
+        if (!count) return true;
+        occurrences.set(line, count - 1);
+        return false;
+    });
 }
 
 function hideEditDraft(popup) {
@@ -1024,15 +1192,16 @@ function hideEditDraft(popup) {
 }
 
 function setEditBusy(popup, busy) {
-    for (const id of ['generate', 'select', 'save', 'save-copy', 'discard']) {
+    for (const id of ['generate', 'select', 'save', 'save-copy', 'discard', 'target', 'preview-history', 'search', 'source', 'favorites', 'favorite']) {
         popup.querySelector(`#persona-edit-${id}`).disabled = busy;
     }
-    for (const id of ['result', 'request', 'copy-name']) {
+    for (const id of ['result', 'request', 'copy-name', 'facts']) {
         popup.querySelector(`#persona-edit-${id}`).readOnly = busy;
     }
+    if (!busy) updateEditReview(popup);
 }
 
-async function handleEditGenerate(popup, personas, personaDescriptions) {
+async function handleEditGenerate(popup, personas, personaDescriptions, characters) {
     const select = popup.querySelector('#persona-edit-select');
     const requestTextarea = popup.querySelector('#persona-edit-request');
     const generateBtn = popup.querySelector('#persona-edit-generate');
@@ -1048,8 +1217,11 @@ async function handleEditGenerate(popup, personas, personaDescriptions) {
     const userRequest = requestTextarea.value.trim();
     const personaName = personas[avatarId] || 'Unknown';
 
-    if (!userRequest) {
-        toastr.warning('Please describe the changes you want.');
+    const targetIndex = popup.querySelector('#persona-edit-target').value;
+    const target = targetIndex === '' ? null : characters[Number(targetIndex)];
+    const facts = protectedFacts(popup.querySelector('#persona-edit-facts').value);
+    if (!userRequest && !target) {
+        toastr.warning('Describe the changes or choose a character to adapt to.');
         return;
     }
 
@@ -1057,15 +1229,22 @@ async function handleEditGenerate(popup, personas, personaDescriptions) {
     const initialLabel = generateBtn.innerHTML;
     generateBtn.textContent = 'Generating...';
     try {
-        const prompt = buildEditPrompt(personaName, currentDescription, userRequest);
+        const prompt = buildEditPrompt(personaName, currentDescription, userRequest, facts, target);
         const text = await generatePersonaText(prompt);
         if (!popup.isConnected || select.value !== avatarId) return;
 
         const previous = getSettings().editDraft;
         const copyName = previous?.avatarId === avatarId ? previous.copyName : `${personaName} (Copy)`;
-        const draft = { avatarId, text, request: userRequest, copyName };
+        const draft = {
+            avatarId,
+            text,
+            request: userRequest,
+            copyName,
+            targetId: target ? target.avatar || target.name : null,
+            targetSource: target?.name || null,
+        };
         saveDraft('editDraft', draft);
-        showEditDraft(popup, draft);
+        showEditDraft(popup, draft, characters);
         toastr.success('Changes generated successfully!');
     } catch (error) {
         console.error('Error generating changes:', error);
@@ -1076,7 +1255,7 @@ async function handleEditGenerate(popup, personas, personaDescriptions) {
     }
 }
 
-function buildEditPrompt(personaName, currentDescription, userRequest) {
+function buildEditPrompt(personaName, currentDescription, userRequest, facts = [], target = null) {
     return `You are an expert persona editor for roleplay scenarios. You need to modify an existing persona description based on the user's request.
 
 CURRENT PERSONA NAME: ${personaName}
@@ -1085,8 +1264,9 @@ CURRENT PERSONA DESCRIPTION:
 ${currentDescription || '(No description yet)'}
 
 USER'S REQUEST:
-${userRequest}
-
+${userRequest || '(No additional instructions)'}
+${target ? `\nTARGET CHARACTER:\n${characterCardContext(target)}\nPreserve the persona's identity, voice, and personality. Rewrite the relationship and the opening hook for the target character's setting.\n` : ''}
+${facts.length ? `\nPROTECTED PHRASES (keep each phrase verbatim):\n${facts.map(fact => `- ${fact}`).join('\n')}\n` : ''}
 INSTRUCTIONS:
 - Apply the requested changes to the persona description
 - Keep the same writing style and format as the original
@@ -1103,15 +1283,23 @@ async function handleEditSave(popup, asCopy = false) {
     const resultTextarea = popup.querySelector('#persona-edit-result');
     const saveButton = popup.querySelector('#persona-edit-save');
     const generateButton = popup.querySelector('#persona-edit-generate');
-    if (saveButton.disabled || generateButton.disabled) return;
+    if (generateButton.disabled || (!asCopy && saveButton.disabled)) return;
 
     const avatarId = resultTextarea.dataset.avatarId;
     const description = resultTextarea.value;
-    if (!description.trim() || !avatarId || select.value !== avatarId) {
+    const draft = getSettings().editDraft;
+    if ((!description.trim() && (asCopy || !draft?.restoreVersion)) || !avatarId || select.value !== avatarId) {
         toastr.warning('Generate changes for the selected persona first.');
         return;
     }
 
+    const record = personaRecord(avatarId);
+    const facts = protectedFacts(popup.querySelector('#persona-edit-facts').value);
+    if (missingFacts(description, facts).length) {
+        toastr.warning('Restore the missing protected phrases before saving.');
+        return;
+    }
+    if (!asCopy && draft?.targetSource) return;
     const copyName = popup.querySelector('#persona-edit-copy-name').value.trim();
     if (asCopy && !copyName) {
         toastr.warning('Enter a name for the new persona.');
@@ -1122,8 +1310,9 @@ async function handleEditSave(popup, asCopy = false) {
     setEditBusy(popup, true);
     try {
         if (asCopy) {
-            await createPersona(copyName, description);
-            return;
+            const newId = await createPersona(copyName, description);
+            savePersonaRecord(newId, { facts, sources: draft?.targetSource ? [draft.targetSource] : record.sources ?? [] });
+            return true;
         }
 
         const { SlashCommandParser, powerUserSettings } = SillyTavern.getContext();
@@ -1142,15 +1331,21 @@ async function handleEditSave(popup, asCopy = false) {
             return;
         }
 
+        const previousDescription = powerUserSettings.persona_descriptions?.[avatarId]?.description ?? '';
         const updatedId = await SlashCommandParser.commands['persona-update'].callback({
             persona: avatarId,
             description,
         });
         if (updatedId !== avatarId) throw new Error('SillyTavern could not update the selected persona.');
 
+        if (previousDescription !== description) {
+            const previous = { text: previousDescription, timestamp: Date.now() };
+            savePersonaRecord(avatarId, { history: [previous, ...(record.history ?? [])].slice(0, 10) });
+        }
         popup.querySelector('#persona-edit-current').value = description;
         saveDraft('editDraft', null);
         hideEditDraft(popup);
+        return true;
     } catch (error) {
         console.error('Error saving persona:', error);
         toastr.error(asCopy ? 'Failed to save a new persona.' : 'Failed to save persona changes.');
