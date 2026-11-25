@@ -68,16 +68,21 @@ Generate and edit personas from character cards using AI, directly inside SillyT
 ### Generating a Persona
 
 1. **Select Character** - Choose which character to generate a persona for
-2. **Configure Options** - Set gender, age, species, prompt style, and person
+2. **Configure Options** - Choose style and perspective, set an optional relationship and opening hook, and select which character card fields the model receives
 3. **Generate** - Click "Generate Persona" to create the persona
-4. **Save** - Click "Create in SillyTavern" to save directly to SillyTavern
+4. **Refine** - Edit the draft directly. With **Structured**, choose an available section and click **Regenerate Section** to replace only that section.
+5. **Save** - Click **Create in SillyTavern** to save the persona.
+
+Set an optional output token limit before generating. The model receives this limit and the draft displays an estimated count for the whole description. Section regeneration is a separate request, so check the total again afterward.
 
 ### Editing a Persona
 
 1. **Select Persona** - Choose the persona you want to modify
 2. **Describe Changes** - Tell the AI what changes you want (e.g., "Make her a doctor", "Change age to 30")
 3. **Generate** - Click "Generate Changes" to get the modified description
-4. **Save** - Click "Save Changes" to update the persona
+4. **Save** - Use **Save Changes** to update the original description, or enter a name and choose **Save as New Persona** to create a separate persona with the edited description. The new persona uses the generator’s placeholder avatar and SillyTavern’s default persona settings.
+
+The latest generator draft and the latest edit draft are retained in your SillyTavern settings. Reopen the relevant dialog to continue, or select **Discard Draft** to clear it.
 
 ## Prompt Styles
 
@@ -100,7 +105,7 @@ Generate and edit personas from character cards using AI, directly inside SillyT
 
 ## Compatibility
 
-- SillyTavern Version: 1.0.0+
+- SillyTavern 1.19.0 or newer required. Compatibility target: 1.19.0.
 - Works with: Chat Completion API, Text Completion API
 
 ## License

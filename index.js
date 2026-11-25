@@ -10,6 +10,25 @@ const STYLES = ['Narrative', 'Structured', 'Profile', 'Dialogue'];
 const PERSONS = ['First person', 'Third person'];
 const GENDERS = ['Male', 'Female', 'Other', 'Not specified'];
 
+const CARD_FIELDS = {
+    personality: 'Personality',
+    scenario: 'Scenario',
+    description: 'Description',
+    first_mes: 'First Message',
+};
+const STRUCTURED_SECTIONS = {
+    overview: 'Overview',
+    general_info: 'General info',
+    backstory: 'Backstory',
+    personality_core: 'Personality',
+    quick_reference: 'Quick reference',
+    physical_presence: 'Physical presence',
+    expression_patterns: 'Expression',
+    worldview: 'Worldview',
+    capabilities: 'Capabilities',
+    style_choices: 'Style',
+};
+
 const defaultSettings = {
     enabled: true,
     style: 'Structured',
@@ -19,8 +38,59 @@ const defaultSettings = {
     species: 'Human',
     userDescription: '',
     lastUsedCharacter: null,
+    relationship: '',
+    openingHook: '',
+    cardFields: Object.keys(CARD_FIELDS),
+    tokenBudget: '',
+    generationDraft: null,
+    editDraft: null,
     customPrompts: []
 };
+
+function escapeHTML(value) {
+    const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(value ?? '').replace(/[&<>"']/g, character => entities[character]);
+}
+
+async function generatePersonaText(prompt, tokenBudget = null) {
+    if (tokenBudget) {
+        prompt += `\n\nKeep the complete response within ${tokenBudget} tokens.`;
+    }
+    const result = await SillyTavern.getContext().generateRaw({ prompt, responseLength: tokenBudget });
+    if (typeof result !== 'string' || !result.trim()) {
+        throw new Error('The provider returned an empty persona description.');
+    }
+    return result;
+}
+
+function saveDraft(key, draft) {
+    getSettings()[key] = draft;
+    SillyTavern.getContext().saveSettingsDebounced();
+}
+
+async function updateTokenStatus(popup) {
+    const result = popup.querySelector('#persona-gen-result');
+    const input = popup.querySelector('#persona-gen-token-budget');
+    const status = popup.querySelector('#persona-gen-token-status');
+    const text = result.value;
+    const budget = input.value;
+    if (!text.trim()) {
+        status.textContent = '';
+        return;
+    }
+
+    const { getTokenCountAsync } = SillyTavern.getContext();
+    let tokens;
+    try {
+        tokens = await getTokenCountAsync(text);
+        if (!Number.isFinite(tokens)) throw new Error('Token count unavailable');
+    } catch {
+        tokens = Math.ceil(Array.from(text).length / 4);
+    }
+    if (popup.isConnected && result.value === text && input.value === budget) {
+        status.textContent = `Estimated tokens: ${tokens}${budget ? ` / ${budget}` : ''}${budget && tokens > Number(budget) ? ' (over budget)' : ''}`;
+    }
+}
 
 function getAllPrompts() {
     const settings = getSettings();
@@ -71,6 +141,11 @@ function deleteCustomPrompt(index) {
     const settings = getSettings();
     if (settings.customPrompts && settings.customPrompts[index]) {
         settings.customPrompts.splice(index, 1);
+        if (settings.style.startsWith('custom_')) {
+            const selectedIndex = Number(settings.style.slice('custom_'.length));
+            if (selectedIndex === index) settings.style = defaultSettings.style;
+            if (selectedIndex > index) settings.style = `custom_${selectedIndex - 1}`;
+        }
         saveSettings();
     }
 }
@@ -82,7 +157,7 @@ function getSettings() {
     }
     for (const key of Object.keys(defaultSettings)) {
         if (!Object.hasOwn(extensionSettings[MODULE_NAME], key)) {
-            extensionSettings[MODULE_NAME][key] = defaultSettings[key];
+            extensionSettings[MODULE_NAME][key] = structuredClone(defaultSettings[key]);
         }
     }
     return extensionSettings[MODULE_NAME];
@@ -91,10 +166,12 @@ function getSettings() {
 function saveSettings() {
     const { saveSettingsDebounced } = SillyTavern.getContext();
     saveSettingsDebounced();
+    updateSettingsPanel();
 }
 
 function openPersonaGeneratorPopup() {
     const existing = document.getElementById('persona-generator-popup');
+    if (existing?.dataset.saving) return;
     if (existing) existing.remove();
 
     const { characters, characterId } = SillyTavern.getContext();
@@ -112,14 +189,14 @@ function openPersonaGeneratorPopup() {
 function buildPopupHTML(characters, currentCharacterId, settings) {
     const characterOptions = characters.map((char, index) => {
         const selected = index === currentCharacterId ? 'selected' : '';
-        return `<option value="${index}" ${selected}>${char.name}</option>`;
+        return `<option value="${index}" ${selected}>${escapeHTML(char.name)}</option>`;
     }).join('');
 
     // Build style options from built-in + custom prompts
     const allPrompts = getAllPrompts();
     const styleOptions = allPrompts.map(prompt => {
         const selected = prompt.id === settings.style ? 'selected' : '';
-        return `<option value="${prompt.id}" ${selected}>${prompt.name}</option>`;
+        return `<option value="${prompt.id}" ${selected}>${escapeHTML(prompt.name)}</option>`;
     }).join('');
 
     const personOptions = PERSONS.map(person => {
@@ -153,11 +230,11 @@ function buildPopupHTML(characters, currentCharacterId, settings) {
                     </div>
                     <div class="persona-generator-field">
                         <label>Age:</label>
-                        <input type="text" id="persona-gen-age" value="${settings.age}" />
+                        <input type="text" id="persona-gen-age" value="${escapeHTML(settings.age)}" />
                     </div>
                     <div class="persona-generator-field">
                         <label>Species/Race:</label>
-                        <input type="text" id="persona-gen-species" value="${settings.species}" />
+                        <input type="text" id="persona-gen-species" value="${escapeHTML(settings.species)}" />
                     </div>
                 </div>
 
@@ -174,16 +251,44 @@ function buildPopupHTML(characters, currentCharacterId, settings) {
 
                 <div class="persona-generator-section">
                     <label>Description (optional):</label>
-                    <textarea id="persona-gen-description" rows="3">${settings.userDescription}</textarea>
+                    <textarea id="persona-gen-description" rows="3">${escapeHTML(settings.userDescription)}</textarea>
                 </div>
 
+                <div class="persona-generator-row">
+                    <div class="persona-generator-field">
+                        <label for="persona-gen-relationship">Relationship to character (optional)</label>
+                        <input id="persona-gen-relationship" type="text" value="${escapeHTML(settings.relationship)}" placeholder="Ally, rival, stranger…">
+                    </div>
+                    <div class="persona-generator-field">
+                        <label for="persona-gen-opening-hook">Opening hook (optional)</label>
+                        <input id="persona-gen-opening-hook" type="text" value="${escapeHTML(settings.openingHook)}" placeholder="What does the persona want in the first scene?">
+                    </div>
+                </div>
+                <fieldset class="persona-generator-section persona-generator-card-fields">
+                    <legend>Include from the character card</legend>
+                    ${Object.entries(CARD_FIELDS).map(([key, label]) => `
+                        <label><input type="checkbox" name="persona-card-field" value="${key}" ${settings.cardFields.includes(key) ? 'checked' : ''}> ${label}</label>
+                    `).join('')}
+                </fieldset>
+                <div class="persona-generator-section">
+                    <label for="persona-gen-token-budget">Maximum output tokens (optional)</label>
+                    <input id="persona-gen-token-budget" type="number" min="1" step="1" value="${escapeHTML(settings.tokenBudget)}">
+                </div>
                 <div class="persona-generator-actions">
                     <button id="persona-gen-generate" class="persona-generator-btn primary">Generate Persona</button>
                 </div>
 
                 <div class="persona-generator-section" id="persona-gen-result-section" style="display: none;">
-                    <label>Generated Persona:</label>
-                    <textarea id="persona-gen-result" rows="8" readonly></textarea>
+                    <label for="persona-gen-result" id="persona-gen-result-label">Generated Persona</label>
+                    <textarea id="persona-gen-result" rows="8"></textarea>
+                    <small id="persona-gen-token-status" role="status"></small>
+                    <div id="persona-gen-section-controls" class="persona-generator-section" hidden>
+                        <label for="persona-gen-section">Structured section to regenerate</label>
+                        <select id="persona-gen-section"></select>
+                        <label for="persona-gen-section-request">Instructions for this section (optional)</label>
+                        <input id="persona-gen-section-request" type="text">
+                        <button id="persona-gen-regenerate" class="persona-generator-btn secondary">Regenerate Section</button>
+                    </div>
                     <div class="persona-generator-result-actions">
                         <button id="persona-gen-create" class="persona-generator-btn primary">
                             <i class="fa-solid fa-plus"></i> Create in SillyTavern
@@ -191,6 +296,7 @@ function buildPopupHTML(characters, currentCharacterId, settings) {
                         <button id="persona-gen-download" class="persona-generator-btn secondary">
                             <i class="fa-solid fa-download"></i> Download JSON
                         </button>
+                        <button id="persona-gen-discard" class="persona-generator-btn secondary">Discard Draft</button>
                         <button id="persona-gen-copy" class="persona-generator-btn secondary">
                             <i class="fa-solid fa-copy"></i> Copy to Clipboard
                         </button>
@@ -209,16 +315,40 @@ function setupPopupEventListeners(popup, characters, settings) {
     const downloadBtn = popup.querySelector('#persona-gen-download');
     const copyBtn = popup.querySelector('#persona-gen-copy');
 
-    overlay.addEventListener('click', () => popup.remove());
-    closeBtn.addEventListener('click', () => popup.remove());
+    const close = () => {
+        if (!popup.dataset.saving) popup.remove();
+    };
+    overlay.addEventListener('click', close);
+    closeBtn.addEventListener('click', close);
 
     generateBtn.addEventListener('click', () => handleGenerate(popup, characters, settings));
     createBtn.addEventListener('click', () => handleSave(popup));
     downloadBtn.addEventListener('click', () => handleDownload(popup));
     copyBtn.addEventListener('click', () => handleCopy(popup));
+    const result = popup.querySelector('#persona-gen-result');
+    const budget = popup.querySelector('#persona-gen-token-budget');
+    popup.querySelector('#persona-gen-regenerate').addEventListener('click', () => handleSectionRegenerate(popup));
+    popup.querySelector('#persona-gen-discard').addEventListener('click', () => {
+        if (generateBtn.disabled || !confirm('Discard this persona draft?')) return;
+        saveDraft('generationDraft', null);
+        result.value = '';
+        popup.querySelector('#persona-gen-result-section').style.display = 'none';
+    });
+    result.addEventListener('input', () => {
+        saveDraft('generationDraft', { ...settings.generationDraft, text: result.value });
+        updateSectionOptions(popup);
+        void updateTokenStatus(popup);
+    });
+    budget.addEventListener('input', () => {
+        settings.tokenBudget = budget.value;
+        SillyTavern.getContext().saveSettingsDebounced();
+        if (settings.generationDraft) void updateTokenStatus(popup);
+    });
+
+    if (settings.generationDraft) showGenerationDraft(popup, settings.generationDraft);
 
     popup.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') popup.remove();
+        if (e.key === 'Escape') close();
     });
 }
 
@@ -231,8 +361,9 @@ async function handleGenerate(popup, characters, settings) {
     const personSelect = popup.querySelector('#persona-gen-person');
     const descTextarea = popup.querySelector('#persona-gen-description');
     const generateBtn = popup.querySelector('#persona-gen-generate');
-    const resultSection = popup.querySelector('#persona-gen-result-section');
-    const resultTextarea = popup.querySelector('#persona-gen-result');
+    if (generateBtn.disabled) return;
+    const budget = popup.querySelector('#persona-gen-token-budget');
+    if (!budget.reportValidity()) return;
 
     const characterId = parseInt(characterSelect.value);
     const options = {
@@ -241,8 +372,17 @@ async function handleGenerate(popup, characters, settings) {
         species: speciesInput.value,
         style: styleSelect.value,
         person: personSelect.value,
-        description: descTextarea.value
+        description: descTextarea.value,
+        relationship: popup.querySelector('#persona-gen-relationship').value.trim(),
+        openingHook: popup.querySelector('#persona-gen-opening-hook').value.trim(),
+        cardFields: Array.from(popup.querySelectorAll('[name="persona-card-field"]:checked'), field => field.value),
     };
+
+    const character = characters[characterId];
+    if (!character) {
+        toastr.warning('Select a character first.');
+        return;
+    }
 
     settings.gender = options.gender;
     settings.age = options.age;
@@ -251,63 +391,132 @@ async function handleGenerate(popup, characters, settings) {
     settings.person = options.person;
     settings.userDescription = options.description;
     settings.lastUsedCharacter = characterId;
+    settings.relationship = options.relationship;
+    settings.openingHook = options.openingHook;
+    settings.cardFields = options.cardFields;
+    settings.tokenBudget = budget.value;
     saveSettings();
 
-    generateBtn.disabled = true;
-    generateBtn.textContent = 'Generating...';
-    resultSection.style.display = 'none';
-
+    setGenerationBusy(popup, 'Generating...');
     try {
-        const character = characters[characterId];
         const prompt = buildPrompt(character, options);
+        const text = await generatePersonaText(prompt, Number(budget.value) || null);
+        if (!popup.isConnected) return;
 
-        const context = SillyTavern.getContext();
-        
-        // Temporarily disable persona description and user name to prevent them from being included in the prompt
-        const savedPersonaDescription = context.powerUserSettings?.persona_description;
-        const savedPersonaDescPosition = context.powerUserSettings?.persona_description_position;
-        const savedUserName = document.querySelector('#your_name')?.textContent || 'User';
-        if (context.powerUserSettings) {
-            context.powerUserSettings.persona_description = '';
-            context.powerUserSettings.persona_description_position = 9; // 9 = NONE
-        }
-        // Set neutral user name
-        const userNameEl = document.querySelector('#your_name');
-        if (userNameEl) userNameEl.textContent = 'User';
-
-        const result = await context.generateQuietPrompt({ quietPrompt: prompt });
-
-        // Restore persona description and user name
-        if (context.powerUserSettings) {
-            context.powerUserSettings.persona_description = savedPersonaDescription;
-            context.powerUserSettings.persona_description_position = savedPersonaDescPosition;
-        }
-        if (userNameEl) userNameEl.textContent = savedUserName;
-
-        resultTextarea.value = result;
-        resultSection.style.display = 'block';
-
+        const draft = { text, style: options.style, characterName: character.name || 'Character' };
+        saveDraft('generationDraft', draft);
+        showGenerationDraft(popup, draft);
         toastr.success('Persona generated successfully!');
     } catch (error) {
         console.error('Error generating persona:', error);
         toastr.error('Failed to generate persona. Check console for details.');
     } finally {
-        generateBtn.disabled = false;
-        generateBtn.textContent = 'Generate Persona';
+        setGenerationBusy(popup);
+    }
+}
+
+function setGenerationBusy(popup, message = '') {
+    const busy = Boolean(message);
+    const generate = popup.querySelector('#persona-gen-generate');
+    generate.textContent = message || 'Generate Persona';
+    for (const id of ['generate', 'create', 'discard', 'regenerate', 'token-budget', 'section', 'section-request']) {
+        popup.querySelector(`#persona-gen-${id}`).disabled = busy;
+    }
+    popup.querySelector('#persona-gen-result').readOnly = busy;
+}
+
+function showGenerationDraft(popup, draft) {
+    const result = popup.querySelector('#persona-gen-result');
+    result.value = draft.text;
+    result.dataset.characterName = draft.characterName;
+    popup.querySelector('#persona-gen-result-label').textContent = `Persona draft for ${draft.characterName}`;
+    popup.querySelector('#persona-gen-result-section').style.display = 'block';
+    updateSectionOptions(popup);
+    void updateTokenStatus(popup);
+}
+
+function findStructuredSection(text, tag) {
+    const pattern = new RegExp(`(<${tag}>)([\\s\\S]*?)(</${tag}>)`, 'gi');
+    const matches = [...text.matchAll(pattern)];
+    return matches.length === 1 ? matches[0] : null;
+}
+
+function updateSectionOptions(popup) {
+    const text = popup.querySelector('#persona-gen-result').value;
+    const select = popup.querySelector('#persona-gen-section');
+    const selected = select.value;
+    const isStructured = getSettings().generationDraft?.style === 'Structured';
+    const sections = isStructured
+        ? Object.entries(STRUCTURED_SECTIONS).filter(([tag]) => findStructuredSection(text, tag))
+        : [];
+    select.replaceChildren(...sections.map(([tag, label]) => new Option(label, tag)));
+    if (sections.some(([tag]) => tag === selected)) select.value = selected;
+    popup.querySelector('#persona-gen-section-controls').hidden = sections.length === 0;
+}
+
+async function handleSectionRegenerate(popup) {
+    const draft = getSettings().generationDraft;
+    const result = popup.querySelector('#persona-gen-result');
+    const budget = popup.querySelector('#persona-gen-token-budget');
+    const tag = popup.querySelector('#persona-gen-section').value;
+    const request = popup.querySelector('#persona-gen-section-request').value.trim();
+    if (popup.querySelector('#persona-gen-generate').disabled || !budget.reportValidity()) return;
+    if (draft?.style !== 'Structured' || !Object.hasOwn(STRUCTURED_SECTIONS, tag)) return;
+    const original = result.value;
+    const section = findStructuredSection(original, tag);
+    if (!section) return;
+
+    setGenerationBusy(popup, 'Regenerating section...');
+    try {
+        const limit = Number(budget.value) || null;
+        const prompt = `Rewrite only the contents of the <${tag}> section. Preserve the persona's facts and narrative perspective unless the request changes them. Return only the new section contents, without outer tags or code fences.
+
+Request: ${request || 'Write a revised version consistent with the rest of the persona.'}
+
+Current persona:
+${original}`;
+        let replacement = (await generatePersonaText(prompt, limit)).trim();
+        const wrapped = findStructuredSection(replacement, tag);
+        if (wrapped?.[0] === replacement) replacement = wrapped[2].trim();
+        if (!replacement || /^```/.test(replacement)
+            || Object.keys(STRUCTURED_SECTIONS).some(key => new RegExp(`</?${key}>`, 'i').test(replacement))) {
+            throw new Error('The model returned invalid section contents.');
+        }
+        if (!popup.isConnected || result.value !== original) return;
+
+        const text = original.slice(0, section.index) + section[1] + '\n' + replacement + '\n' + section[3]
+            + original.slice(section.index + section[0].length);
+        const updated = { ...draft, text };
+        saveDraft('generationDraft', updated);
+        showGenerationDraft(popup, updated);
+    } catch (error) {
+        console.error('Error regenerating persona section:', error);
+        toastr.error('Could not regenerate this section. The draft is still available.');
+    } finally {
+        setGenerationBusy(popup);
     }
 }
 
 function buildPrompt(character, options) {
-    const { gender, age, species, style, person, description } = options;
+    const { gender, age, species, style, person, description, relationship, openingHook } = options;
     const name = character.name || 'Unknown';
-    const personality = character.personality || '';
-    const scenario = character.scenario || '';
-    const desc = character.description || '';
-    const firstMes = character.first_mes || '';
+    const userPrefs = [
+        `Gender: ${gender}`,
+        `Age: ${age}`,
+        `Species/Race: ${species}`,
+        `Narrative Perspective: ${person}`,
+        relationship && `Relationship to the character: ${relationship}`,
+        openingHook && `Opening scene goal or hook: ${openingHook}`,
+        description && `Additional details from user: ${description}`,
+    ].filter(Boolean).join('\n');
 
-    const userPrefs = `Gender: ${gender}\nAge: ${age}\nSpecies/Race: ${species}\nNarrative Perspective: ${person}${description ? `\nAdditional details from user: ${description}` : ''}`;
-
-    const cardContext = `Name: ${name}\nPersonality: ${personality}\nScenario: ${scenario}\nDescription: ${desc}\nFirst Message: ${firstMes}`;
+    const includedFields = options.cardFields ?? Object.keys(CARD_FIELDS);
+    const cardContext = [
+        `Name: ${name}`,
+        ...Object.entries(CARD_FIELDS)
+            .filter(([key]) => includedFields.includes(key))
+            .map(([key, label]) => `${label}: ${character[key] || ''}`),
+    ].join('\n');
 
     // Check if it's a custom prompt
     if (style && style.startsWith('custom_')) {
@@ -580,124 +789,50 @@ function extractPersonaName(personaText) {
 
 async function handleSave(popup) {
     const resultTextarea = popup.querySelector('#persona-gen-result');
-    const personaText = resultTextarea.value;
+    const saveButton = popup.querySelector('#persona-gen-create');
+    const generateButton = popup.querySelector('#persona-gen-generate');
+    if (saveButton.disabled || generateButton.disabled) return;
 
-    if (!personaText) {
+    const description = resultTextarea.value;
+    if (!description.trim()) {
         toastr.warning('No persona to save. Generate one first.');
         return;
     }
 
-    // Extract persona name from generated text
-    const personaName = extractPersonaName(personaText);
-    
-    if (!personaName) {
-        toastr.warning('Could not extract persona name from generated text. Using default name.');
-    }
-    
-    // Get the character name from the select dropdown for fallback
-    const characterSelect = popup.querySelector('#persona-gen-character');
-    const { characters } = SillyTavern.getContext();
-    const characterId = parseInt(characterSelect.value);
-    const character = characters[characterId];
-    const characterName = character ? character.name : 'character';
-    
-    // Use extracted persona name, fallback to character name
-    const finalName = personaName || characterName;
-
+    const name = extractPersonaName(description) || resultTextarea.dataset.characterName || 'Character';
+    popup.dataset.saving = 'true';
+    setGenerationBusy(popup, 'Saving...');
     try {
-        const context = SillyTavern.getContext();
-        
-        // Create a small 10x10 purple avatar as base64
-        const canvas = document.createElement('canvas');
-        canvas.width = 10;
-        canvas.height = 10;
-        const ctx2d = canvas.getContext('2d');
-        ctx2d.fillStyle = '#9b59b6';
-        ctx2d.fillRect(0, 0, 10, 10);
-        const avatarDataUrl = canvas.toDataURL('image/png');
-        
-        // Step 1: Create persona via slash command (quote name to preserve spaces)
-        if (context.executeSlashCommandsWithOptions) {
-            const createCmd = `/persona-create name="${finalName}" select=false avatarPromptResize=false avatar=${avatarDataUrl}`;
-            console.log('[PersonaGen] Running persona-create for:', finalName);
-            await context.executeSlashCommandsWithOptions(createCmd);
-        }
-        
-        // Wait longer for slash command to fully complete
-        await new Promise(r => setTimeout(r, 500));
-        
-        // Step 2: Find the avatar ID
-        const powerUser = context.powerUserSettings;
-        let avatarId = null;
-        
-        console.log('[PersonaGen] powerUser keys:', Object.keys(powerUser || {}));
-        console.log('[PersonaGen] personas:', JSON.stringify(powerUser?.personas || {}));
-        
-        if (powerUser && powerUser.personas) {
-            // First try exact match
-            for (const [key, name] of Object.entries(powerUser.personas)) {
-                if (name === finalName) {
-                    avatarId = key;
-                    break;
-                }
-            }
-            // If not found, try finding the most recently created persona_gen_ entry
-            if (!avatarId) {
-                const genEntries = Object.entries(powerUser.personas).filter(([key]) => key.startsWith('persona_gen_'));
-                if (genEntries.length > 0) {
-                    avatarId = genEntries[genEntries.length - 1][0];
-                    console.log('[PersonaGen] Using latest persona_gen_ entry:', avatarId, powerUser.personas[avatarId]);
-                }
-            }
-        }
-        
-        console.log('[PersonaGen] Found avatarId:', avatarId);
-        
-        // Step 3: Set description
-        if (avatarId && powerUser) {
-            if (!powerUser.persona_descriptions) powerUser.persona_descriptions = {};
-            if (!powerUser.persona_descriptions[avatarId]) {
-                powerUser.persona_descriptions[avatarId] = {};
-            }
-            powerUser.persona_descriptions[avatarId].description = personaText || '';
-            powerUser.persona_descriptions[avatarId].position = 0;
-            powerUser.persona_descriptions[avatarId].depth = 2;
-            powerUser.persona_descriptions[avatarId].role = 0;
-            powerUser.persona_descriptions[avatarId].lorebook = '';
-            powerUser.persona_descriptions[avatarId].title = '';
-            
-            console.log('[PersonaGen] Description set:', powerUser.persona_descriptions[avatarId].description.substring(0, 50) + '...');
-            
-            // Save settings
-            if (context.saveSettingsDebounced) context.saveSettingsDebounced();
-            
-            // Emit event
-            if (context.eventSource && context.event_types) {
-                context.eventSource.emit(context.event_types.PERSONA_UPDATED, avatarId);
-            }
-            
-            // Refresh UI
-            if (context.getUserAvatars) {
-                await context.getUserAvatars(true, avatarId);
-            }
-        } else {
-            console.warn('[PersonaGen] Could not find avatar for name:', finalName);
-            // Fallback: try /persona-update via fetch
-            if (personaText && avatarId) {
-                const updateCmd = `/persona-update persona=${avatarId} description="${personaText.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
-                console.log('[PersonaGen] Trying fallback /persona-update');
-                await context.executeSlashCommandsWithOptions(updateCmd);
-            }
-        }
-        
-        console.log('[PersonaGen] Done:', { name: finalName, avatarId });
-        toastr.success(`Persona "${finalName}" created in SillyTavern!`);
-        
+        await createPersona(name, description);
+        saveDraft('generationDraft', null);
         popup.remove();
     } catch (error) {
         console.error('Error creating persona:', error);
         toastr.error('Failed to create persona in SillyTavern. Check console for details.');
+    } finally {
+        delete popup.dataset.saving;
+        setGenerationBusy(popup);
     }
+}
+
+async function createPersona(name, description) {
+    const { SlashCommandParser } = SillyTavern.getContext();
+    const canvas = document.createElement('canvas');
+    canvas.width = 10;
+    canvas.height = 10;
+    const drawing = canvas.getContext('2d');
+    drawing.fillStyle = '#9b59b6';
+    drawing.fillRect(0, 0, 10, 10);
+
+    // Pass literal values to the registered command, without parsing them as STscript.
+    const avatarId = await SlashCommandParser.commands['persona-create'].callback({
+        name,
+        description,
+        select: 'false',
+        avatarPromptResize: 'false',
+        avatar: canvas.toDataURL('image/png'),
+    });
+    if (!avatarId) throw new Error('SillyTavern did not return a new persona ID.');
 }
 
 function handleDownload(popup) {
@@ -709,9 +844,7 @@ function handleDownload(popup) {
         return;
     }
 
-    const { characters, characterId } = SillyTavern.getContext();
-    const character = characters[characterId];
-    const characterName = character ? character.name : 'character';
+    const characterName = resultTextarea.dataset.characterName || 'character';
 
     const persona = {
         name: '{{user}}',
@@ -749,6 +882,7 @@ function handleCopy(popup) {
 
 function openEditPersonaPopup() {
     const existing = document.getElementById('persona-edit-popup');
+    if (existing?.dataset.saving) return;
     if (existing) existing.remove();
 
     const { powerUserSettings } = SillyTavern.getContext();
@@ -766,7 +900,7 @@ function openEditPersonaPopup() {
 
 function buildEditPopupHTML(personas, personaDescriptions) {
     const personaOptions = Object.entries(personas).map(([avatarId, name]) => {
-        return `<option value="${avatarId}">${name}</option>`;
+        return `<option value="${escapeHTML(avatarId)}">${escapeHTML(name)}</option>`;
     }).join('');
 
     const firstAvatarId = Object.keys(personas)[0] || '';
@@ -788,7 +922,7 @@ function buildEditPopupHTML(personas, personaDescriptions) {
 
                 <div class="persona-generator-section">
                     <label>Current Description:</label>
-                    <textarea id="persona-edit-current" rows="6" readonly>${firstDescription}</textarea>
+                    <textarea id="persona-edit-current" rows="6" readonly>${escapeHTML(firstDescription)}</textarea>
                 </div>
 
                 <div class="persona-generator-section">
@@ -809,6 +943,8 @@ function buildEditPopupHTML(personas, personaDescriptions) {
                         <button id="persona-edit-save" class="persona-generator-btn primary">
                             <i class="fa-solid fa-save"></i> Save Changes
                         </button>
+                        <button id="persona-edit-save-copy" class="persona-generator-btn secondary">Save as New Persona</button>
+                        <button id="persona-edit-discard" class="persona-generator-btn secondary">Discard Draft</button>
                         <button id="persona-edit-copy" class="persona-generator-btn secondary">
                             <i class="fa-solid fa-copy"></i> Copy to Clipboard
                         </button>
@@ -828,36 +964,87 @@ function setupEditPopupEventListeners(popup, personas, personaDescriptions) {
     const saveBtn = popup.querySelector('#persona-edit-save');
     const copyBtn = popup.querySelector('#persona-edit-copy');
 
-    overlay.addEventListener('click', () => popup.remove());
-    closeBtn.addEventListener('click', () => popup.remove());
+    const close = () => {
+        if (!popup.dataset.saving) popup.remove();
+    };
+    overlay.addEventListener('click', close);
+    closeBtn.addEventListener('click', close);
 
-    select.addEventListener('change', () => {
+    function showSelection() {
         const avatarId = select.value;
-        const description = personaDescriptions[avatarId]?.description || '';
-        currentTextarea.value = description;
-        // Hide result when switching persona
-        const resultSection = popup.querySelector('#persona-edit-result-section');
-        resultSection.style.display = 'none';
-    });
+        const draft = getSettings().editDraft;
+        currentTextarea.value = personaDescriptions[avatarId]?.description || '';
+        hideEditDraft(popup);
+        popup.querySelector('#persona-edit-request').value = '';
+        if (draft?.avatarId === avatarId) showEditDraft(popup, draft);
+    }
 
+    select.addEventListener('change', showSelection);
     generateBtn.addEventListener('click', () => handleEditGenerate(popup, personas, personaDescriptions));
-    saveBtn.addEventListener('click', () => handleEditSave(popup, personas));
+    saveBtn.addEventListener('click', () => handleEditSave(popup));
+    popup.querySelector('#persona-edit-save-copy').addEventListener('click', () => handleEditSave(popup, true));
     copyBtn.addEventListener('click', () => handleEditCopy(popup));
+    popup.querySelector('#persona-edit-discard').addEventListener('click', () => {
+        if (generateBtn.disabled || !confirm('Discard this edit draft?')) return;
+        saveDraft('editDraft', null);
+        hideEditDraft(popup);
+    });
+    for (const [id, key] of [['result', 'text'], ['copy-name', 'copyName'], ['request', 'request']]) {
+        const input = popup.querySelector(`#persona-edit-${id}`);
+        input.addEventListener('input', () => {
+            const draft = getSettings().editDraft;
+            if (draft?.avatarId === select.value) saveDraft('editDraft', { ...draft, [key]: input.value });
+        });
+    }
+
+    const draft = getSettings().editDraft;
+    if (draft && Object.hasOwn(personas, draft.avatarId)) select.value = draft.avatarId;
+    showSelection();
 
     popup.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') popup.remove();
+        if (e.key === 'Escape') close();
     });
+}
+
+function showEditDraft(popup, draft) {
+    const result = popup.querySelector('#persona-edit-result');
+    result.dataset.avatarId = draft.avatarId;
+    result.value = draft.text;
+    popup.querySelector('#persona-edit-request').value = draft.request;
+    popup.querySelector('#persona-edit-copy-name').value = draft.copyName;
+    popup.querySelector('#persona-edit-result-section').style.display = 'block';
+}
+
+function hideEditDraft(popup) {
+    const result = popup.querySelector('#persona-edit-result');
+    result.value = '';
+    delete result.dataset.avatarId;
+    popup.querySelector('#persona-edit-copy-name').value = '';
+    popup.querySelector('#persona-edit-result-section').style.display = 'none';
+}
+
+function setEditBusy(popup, busy) {
+    for (const id of ['generate', 'select', 'save', 'save-copy', 'discard']) {
+        popup.querySelector(`#persona-edit-${id}`).disabled = busy;
+    }
+    for (const id of ['result', 'request', 'copy-name']) {
+        popup.querySelector(`#persona-edit-${id}`).readOnly = busy;
+    }
 }
 
 async function handleEditGenerate(popup, personas, personaDescriptions) {
     const select = popup.querySelector('#persona-edit-select');
     const requestTextarea = popup.querySelector('#persona-edit-request');
     const generateBtn = popup.querySelector('#persona-edit-generate');
-    const resultSection = popup.querySelector('#persona-edit-result-section');
-    const resultTextarea = popup.querySelector('#persona-edit-result');
+    if (generateBtn.disabled) return;
 
     const avatarId = select.value;
     const currentDescription = personaDescriptions[avatarId]?.description || '';
+    if (!Object.hasOwn(personas, avatarId)) {
+        toastr.warning('Select a persona first.');
+        return;
+    }
+
     const userRequest = requestTextarea.value.trim();
     const personaName = personas[avatarId] || 'Unknown';
 
@@ -866,46 +1053,26 @@ async function handleEditGenerate(popup, personas, personaDescriptions) {
         return;
     }
 
-    generateBtn.disabled = true;
-    generateBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating...';
-    resultSection.style.display = 'none';
-
+    setEditBusy(popup, true);
+    const initialLabel = generateBtn.innerHTML;
+    generateBtn.textContent = 'Generating...';
     try {
         const prompt = buildEditPrompt(personaName, currentDescription, userRequest);
+        const text = await generatePersonaText(prompt);
+        if (!popup.isConnected || select.value !== avatarId) return;
 
-        const context = SillyTavern.getContext();
-        
-        // Temporarily disable persona description and user name to prevent them from being included in the prompt
-        const savedPersonaDescription = context.powerUserSettings?.persona_description;
-        const savedPersonaDescPosition = context.powerUserSettings?.persona_description_position;
-        const savedUserName = document.querySelector('#your_name')?.textContent || 'User';
-        if (context.powerUserSettings) {
-            context.powerUserSettings.persona_description = '';
-            context.powerUserSettings.persona_description_position = 9; // 9 = NONE
-        }
-        // Set neutral user name
-        const userNameEl = document.querySelector('#your_name');
-        if (userNameEl) userNameEl.textContent = 'User';
-
-        const result = await context.generateQuietPrompt({ quietPrompt: prompt });
-
-        // Restore persona description and user name
-        if (context.powerUserSettings) {
-            context.powerUserSettings.persona_description = savedPersonaDescription;
-            context.powerUserSettings.persona_description_position = savedPersonaDescPosition;
-        }
-        if (userNameEl) userNameEl.textContent = savedUserName;
-
-        resultTextarea.value = result;
-        resultSection.style.display = 'block';
-
+        const previous = getSettings().editDraft;
+        const copyName = previous?.avatarId === avatarId ? previous.copyName : `${personaName} (Copy)`;
+        const draft = { avatarId, text, request: userRequest, copyName };
+        saveDraft('editDraft', draft);
+        showEditDraft(popup, draft);
         toastr.success('Changes generated successfully!');
     } catch (error) {
         console.error('Error generating changes:', error);
         toastr.error('Failed to generate changes. Check console for details.');
     } finally {
-        generateBtn.disabled = false;
-        generateBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Generate Changes';
+        generateBtn.innerHTML = initialLabel;
+        setEditBusy(popup, false);
     }
 }
 
@@ -931,56 +1098,65 @@ INSTRUCTIONS:
 Generate the updated persona description:`;
 }
 
-async function handleEditSave(popup, personas) {
+async function handleEditSave(popup, asCopy = false) {
     const select = popup.querySelector('#persona-edit-select');
     const resultTextarea = popup.querySelector('#persona-edit-result');
-    const newDescription = resultTextarea.value;
+    const saveButton = popup.querySelector('#persona-edit-save');
+    const generateButton = popup.querySelector('#persona-edit-generate');
+    if (saveButton.disabled || generateButton.disabled) return;
 
-    if (!newDescription) {
-        toastr.warning('No changes to save. Generate changes first.');
+    const avatarId = resultTextarea.dataset.avatarId;
+    const description = resultTextarea.value;
+    if (!description.trim() || !avatarId || select.value !== avatarId) {
+        toastr.warning('Generate changes for the selected persona first.');
         return;
     }
 
-    const avatarId = select.value;
-    const personaName = personas[avatarId] || 'Unknown';
+    const copyName = popup.querySelector('#persona-edit-copy-name').value.trim();
+    if (asCopy && !copyName) {
+        toastr.warning('Enter a name for the new persona.');
+        return;
+    }
 
+    popup.dataset.saving = 'true';
+    setEditBusy(popup, true);
     try {
-        const context = SillyTavern.getContext();
-        const { powerUserSettings, saveSettingsDebounced, eventSource, event_types } = context;
-
-        if (powerUserSettings && powerUserSettings.persona_descriptions) {
-            if (!powerUserSettings.persona_descriptions[avatarId]) {
-                powerUserSettings.persona_descriptions[avatarId] = {};
-            }
-            powerUserSettings.persona_descriptions[avatarId].description = newDescription;
-            powerUserSettings.persona_descriptions[avatarId].position = 0;
-            powerUserSettings.persona_descriptions[avatarId].depth = 2;
-            powerUserSettings.persona_descriptions[avatarId].role = 0;
-
-            saveSettingsDebounced();
-
-            if (eventSource && event_types) {
-                eventSource.emit(event_types.PERSONA_UPDATED, avatarId);
-            }
-
-            // Update the current description display
-            const currentTextarea = popup.querySelector('#persona-edit-current');
-            currentTextarea.value = newDescription;
-
-            // Hide result section
-            const resultSection = popup.querySelector('#persona-edit-result-section');
-            resultSection.style.display = 'none';
-
-            // Refresh persona list
-            if (context.getUserAvatars) {
-                await context.getUserAvatars(true, avatarId);
-            }
-
-            toastr.success(`Persona "${personaName}" updated successfully!`);
+        if (asCopy) {
+            await createPersona(copyName, description);
+            return;
         }
+
+        const { SlashCommandParser, powerUserSettings } = SillyTavern.getContext();
+        if (!Object.hasOwn(powerUserSettings.personas, avatarId)) {
+            throw new Error('The selected persona no longer exists.');
+        }
+
+        // The 1.19.0 command can prefer the active persona's name over an avatar ID.
+        const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const normalizedId = normalize(avatarId);
+        const ambiguous = Object.entries(powerUserSettings.personas).some(
+            ([id, name]) => id !== avatarId && normalize(name) === normalizedId,
+        );
+        if (ambiguous) {
+            toastr.warning('Another persona uses this avatar ID as its name. Rename that persona before saving.');
+            return;
+        }
+
+        const updatedId = await SlashCommandParser.commands['persona-update'].callback({
+            persona: avatarId,
+            description,
+        });
+        if (updatedId !== avatarId) throw new Error('SillyTavern could not update the selected persona.');
+
+        popup.querySelector('#persona-edit-current').value = description;
+        saveDraft('editDraft', null);
+        hideEditDraft(popup);
     } catch (error) {
         console.error('Error saving persona:', error);
-        toastr.error('Failed to save persona changes.');
+        toastr.error(asCopy ? 'Failed to save a new persona.' : 'Failed to save persona changes.');
+    } finally {
+        delete popup.dataset.saving;
+        setEditBusy(popup, false);
     }
 }
 
@@ -1020,7 +1196,7 @@ function buildPromptEditorHTML() {
     const promptListHTML = prompts.map((prompt, index) => `
         <div class="prompt-item" data-id="${prompt.id}">
             <div class="prompt-item-header">
-                <span class="prompt-name">${prompt.name}</span>
+                <span class="prompt-name">${escapeHTML(prompt.name)}</span>
                 ${prompt.builtIn 
                     ? '<span class="prompt-badge built-in">Built-in</span>'
                     : `<div class="prompt-actions">
@@ -1205,7 +1381,7 @@ function refreshPromptList(popup) {
     list.innerHTML = prompts.map((prompt, index) => `
         <div class="prompt-item" data-id="${prompt.id}">
             <div class="prompt-item-header">
-                <span class="prompt-name">${prompt.name}</span>
+                <span class="prompt-name">${escapeHTML(prompt.name)}</span>
                 ${prompt.builtIn 
                     ? '<span class="prompt-badge built-in">Built-in</span>'
                     : `<div class="prompt-actions">
@@ -1306,55 +1482,37 @@ function addToolbarButton() {
     }
 }
 
-function addExtensionSettings() {
-    const { renderExtensionTemplateAsync } = SillyTavern.getContext();
-    
-    const settingsHtml = `
-        <div class="persona-gen-settings-container">
-            <div class="inline-drawer">
-                <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>Persona Generator</b>
-                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                </div>
-                <div class="inline-drawer-content">
-                    <div class="persona-gen-setting">
-                        <label for="persona_gen_default_style">Default Style:</label>
-                        <select id="persona_gen_default_style">
-                            <option value="Narrative">Narrative</option>
-                            <option value="Structured" selected>Structured</option>
-                            <option value="Profile">Profile</option>
-                            <option value="Dialogue">Dialogue</option>
-                        </select>
-                    </div>
-                    <div class="persona-gen-setting">
-                        <label for="persona_gen_default_person">Default Person:</label>
-                        <select id="persona_gen_default_person">
-                            <option value="First person" selected>First person</option>
-                            <option value="Third person">Third person</option>
-                        </select>
-                    </div>
-                    <button id="persona_gen_open_btn" class="menu_button">
-                        <i class="fa-solid fa-user-plus"></i>
-                        <span>Open Persona Generator</span>
-                    </button>
-                    <button id="persona_gen_edit_prompts_btn" class="menu_button">
-                        <i class="fa-solid fa-pen-to-square"></i>
-                        <span>Edit Prompts</span>
-                    </button>
-                    <small>Or use <code>/persona-gen</code> in chat</small>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // Try both selectors for extensions settings
+async function addExtensionSettings() {
+    const response = await fetch(new URL('./settings.html', import.meta.url));
+    if (!response.ok) throw new Error('Failed to load Persona Generator settings.');
+    const $panel = $(await response.text());
     const $settings = $('#extensions_settings2').length ? $('#extensions_settings2') : $('#extensions_settings');
-    $settings.append(settingsHtml);
-    
-    $('#persona_gen_open_btn').on('click', () => openPersonaGeneratorPopup());
-    $('#persona_gen_edit_prompts_btn').on('click', () => openPromptEditor());
-    
-    console.log(`${EXTENSION_NAME} settings panel added to Extensions menu`);
+    $settings.append($panel);
+
+    const settings = getSettings();
+    for (const key of ['style', 'person', 'gender', 'age', 'species']) {
+        const $input = $panel.find(`#persona_gen_${key}`);
+        $input.on('change', () => {
+            settings[key] = $input.val();
+            saveSettings();
+        });
+    }
+
+    updateSettingsPanel();
+    $panel.find('#persona_gen_open').on('click', openPersonaGeneratorPopup);
+    $panel.find('#persona_gen_edit_prompts_btn').on('click', openPromptEditor);
+}
+
+function updateSettingsPanel() {
+    const style = document.querySelector('#persona_gen_style');
+    if (!style) return;
+
+    const settings = getSettings();
+    style.replaceChildren(...getAllPrompts().map(prompt => new Option(prompt.name, prompt.id)));
+    style.value = settings.style;
+    for (const key of ['person', 'gender', 'age', 'species']) {
+        document.querySelector(`#persona_gen_${key}`).value = settings[key];
+    }
 }
 
 // Initialize extension
@@ -1377,7 +1535,7 @@ function addExtensionSettings() {
         }));
 
         eventSource.on(event_types.APP_READY, () => {
-            addExtensionSettings();
+            addExtensionSettings().catch(error => console.error(error));
             // Add toolbar button with a delay to ensure DOM is ready
             setTimeout(() => {
                 addToolbarButton();

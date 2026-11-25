@@ -144,6 +144,7 @@
 
 .persona-generator-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 12px;
     margin-top: 20px;
 }
@@ -534,4 +535,28 @@
 .prompt-delete-btn:hover {
     background: #e94560;
     color: #fff;
+}
+
+.persona-generator-card-fields label {
+    display: inline-flex;
+    align-items: center;
+    margin: 4px 12px 4px 0;
+}
+
+.persona-generator-card-fields input[type="checkbox"] {
+    width: auto;
+    margin-right: 6px;
+}
+
+#persona-gen-section-controls {
+    margin-top: 12px;
+}
+
+#persona-gen-section-controls input,
+#persona-gen-section-controls select {
+    margin-bottom: 8px;
+}
+
+#persona-edit-copy-name {
+    margin-top: 4px;
 }
