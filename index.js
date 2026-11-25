@@ -5,6 +5,8 @@
 
 const MODULE_NAME = 'persona_generator';
 const EXTENSION_NAME = 'Persona Generator';
+const AVATAR_TYPES = 'image/png,image/jpeg,image/webp,image/gif';
+const LIBRARY_BACKUP_FORMAT = 'sillytavern-persona-generator-library';
 
 const STYLES = ['Narrative', 'Structured', 'Profile', 'Dialogue'];
 const PERSONS = ['First person', 'Third person'];
@@ -53,11 +55,15 @@ function escapeHTML(value) {
     return String(value ?? '').replace(/[&<>"']/g, character => entities[character]);
 }
 
+function applyTokenBudget(prompt, tokenBudget) {
+    return tokenBudget ? `${prompt}\n\nKeep the complete response within ${tokenBudget} tokens.` : prompt;
+}
+
 async function generatePersonaText(prompt, tokenBudget = null) {
-    if (tokenBudget) {
-        prompt += `\n\nKeep the complete response within ${tokenBudget} tokens.`;
-    }
-    const result = await SillyTavern.getContext().generateRaw({ prompt, responseLength: tokenBudget });
+    const result = await SillyTavern.getContext().generateRaw({
+        prompt: applyTokenBudget(prompt, tokenBudget),
+        responseLength: tokenBudget,
+    });
     if (typeof result !== 'string' || !result.trim()) {
         throw new Error('The provider returned an empty persona description.');
     }
@@ -313,13 +319,29 @@ function buildPopupHTML(characters, currentCharacterId, settings) {
                     <label for="persona-gen-token-budget">Maximum output tokens (optional)</label>
                     <input id="persona-gen-token-budget" type="number" min="1" step="1" value="${escapeHTML(settings.tokenBudget)}">
                 </div>
+                <div class="persona-generator-section">
+                    <label for="persona-gen-variation-count">Number of proposals</label>
+                    <select id="persona-gen-variation-count"><option>1</option><option>2</option><option>3</option></select>
+                </div>
                 <div class="persona-generator-actions">
                     <button id="persona-gen-generate" class="persona-generator-btn primary">Generate Persona</button>
+                    <button id="persona-gen-preview" class="persona-generator-btn secondary" aria-expanded="false">Preview Prompt</button>
                 </div>
+                <pre id="persona-gen-prompt-preview" class="persona-generator-preview" hidden></pre>
 
                 <div class="persona-generator-section" id="persona-gen-result-section" style="display: none;">
                     <label for="persona-gen-result" id="persona-gen-result-label">Generated Persona</label>
+                    <div id="persona-gen-variation-controls" hidden>
+                        <label for="persona-gen-variation">Proposal to edit and save</label>
+                        <select id="persona-gen-variation"></select>
+                        <details>
+                            <summary>Compare proposals</summary>
+                            <div id="persona-gen-variation-comparison" class="persona-generator-variation-comparison"></div>
+                        </details>
+                    </div>
                     <textarea id="persona-gen-result" rows="8"></textarea>
+                    <label for="persona-gen-avatar">Custom avatar (optional)</label>
+                    <input id="persona-gen-avatar" type="file" accept="${AVATAR_TYPES}">
                     <small id="persona-gen-token-status" role="status"></small>
                     <div id="persona-gen-section-controls" class="persona-generator-section" hidden>
                         <label for="persona-gen-section">Structured section to regenerate</label>
@@ -361,6 +383,19 @@ function setupPopupEventListeners(popup, characters, settings) {
     closeBtn.addEventListener('click', close);
 
     generateBtn.addEventListener('click', () => handleGenerate(popup, characters, settings));
+    popup.querySelector('#persona-gen-preview').addEventListener('click', () => {
+        const input = readGenerationInput(popup, characters);
+        if (input) showPromptPreview(popup, 'gen', applyTokenBudget(buildPrompt(input.character, input.options), input.tokenBudget));
+    });
+    popup.querySelector('#persona-gen-variation').addEventListener('change', event => {
+        const draft = settings.generationDraft;
+        const activeVariation = Number(event.target.value);
+        const text = draft?.variations?.[activeVariation];
+        if (typeof text !== 'string') return;
+        const updated = { ...draft, activeVariation, text };
+        saveDraft('generationDraft', updated);
+        showGenerationDraft(popup, updated);
+    });
     createBtn.addEventListener('click', () => handleSave(popup));
     downloadBtn.addEventListener('click', () => handleDownload(popup));
     copyBtn.addEventListener('click', () => handleCopy(popup));
@@ -374,7 +409,7 @@ function setupPopupEventListeners(popup, characters, settings) {
         popup.querySelector('#persona-gen-result-section').style.display = 'none';
     });
     result.addEventListener('input', () => {
-        saveDraft('generationDraft', { ...settings.generationDraft, text: result.value });
+        saveGenerationText(popup, { ...settings.generationDraft, text: result.value });
         updateSectionOptions(popup);
         void updateTokenStatus(popup);
     });
@@ -391,7 +426,7 @@ function setupPopupEventListeners(popup, characters, settings) {
     });
 }
 
-async function handleGenerate(popup, characters, settings) {
+function readGenerationInput(popup, characters) {
     const characterSelect = popup.querySelector('#persona-gen-character');
     const genderSelect = popup.querySelector('#persona-gen-gender');
     const ageInput = popup.querySelector('#persona-gen-age');
@@ -399,8 +434,6 @@ async function handleGenerate(popup, characters, settings) {
     const styleSelect = popup.querySelector('#persona-gen-style');
     const personSelect = popup.querySelector('#persona-gen-person');
     const descTextarea = popup.querySelector('#persona-gen-description');
-    const generateBtn = popup.querySelector('#persona-gen-generate');
-    if (generateBtn.disabled) return;
     const budget = popup.querySelector('#persona-gen-token-budget');
     if (!budget.reportValidity()) return;
 
@@ -427,6 +460,24 @@ async function handleGenerate(popup, characters, settings) {
         return;
     }
 
+    return { character, characterId, options, tokenBudget: Number(budget.value) || null };
+}
+
+function showPromptPreview(popup, prefix, prompt) {
+    const preview = popup.querySelector(`#persona-${prefix}-prompt-preview`);
+    preview.hidden = !preview.hidden && preview.textContent === prompt;
+    preview.textContent = prompt;
+    popup.querySelector(`#persona-${prefix}-preview`).setAttribute('aria-expanded', String(!preview.hidden));
+}
+
+async function handleGenerate(popup, characters, settings) {
+    const generateBtn = popup.querySelector('#persona-gen-generate');
+    if (generateBtn.disabled) return;
+    const input = readGenerationInput(popup, characters);
+    if (!input) return;
+    const { character, characterId, options, tokenBudget } = input;
+    const variationCount = Number(popup.querySelector('#persona-gen-variation-count').value) || 1;
+
     settings.gender = options.gender;
     settings.age = options.age;
     settings.species = options.species;
@@ -437,27 +488,34 @@ async function handleGenerate(popup, characters, settings) {
     settings.relationship = options.relationship;
     settings.openingHook = options.openingHook;
     settings.cardFields = options.cardFields;
-    settings.tokenBudget = budget.value;
+    settings.tokenBudget = tokenBudget ? String(tokenBudget) : '';
     saveSettings();
 
+    const variations = [];
+    const baseDraft = {
+        style: options.style,
+        characterName: character.name || 'Character',
+        sources: [character, ...options.groupCharacters].map(card => card.name || 'Character'),
+    };
     setGenerationBusy(popup, 'Generating...');
     try {
         const prompt = buildPrompt(character, options);
-        const text = await generatePersonaText(prompt, Number(budget.value) || null);
-        if (!popup.isConnected) return;
-
-        const draft = {
-            text,
-            style: options.style,
-            characterName: character.name || 'Character',
-            sources: [character, ...options.groupCharacters].map(card => card.name || 'Character'),
-        };
-        saveDraft('generationDraft', draft);
-        showGenerationDraft(popup, draft);
-        toastr.success('Persona generated successfully!');
+        for (let iteration = 0; iteration < variationCount; iteration++) {
+            generateBtn.textContent = variationCount === 1 ? 'Generating...' : `Generating ${iteration + 1} of ${variationCount}...`;
+            const text = await generatePersonaText(prompt, tokenBudget);
+            if (!popup.isConnected) return;
+            if (variations.includes(text)) continue;
+            variations.push(text);
+            const draft = { ...baseDraft, text: variations[0], variations: [...variations], activeVariation: 0 };
+            saveDraft('generationDraft', draft);
+            showGenerationDraft(popup, draft);
+        }
+        if (variations.length < variationCount) toastr.info('Identical proposals were combined.');
+        else toastr.success('Persona generated successfully!');
     } catch (error) {
         console.error('Error generating persona:', error);
-        toastr.error('Failed to generate persona. Check console for details.');
+        if (variations.length) toastr.warning('Some proposals could not be generated. Completed proposals are available.');
+        else toastr.error('Failed to generate persona. Check console for details.');
     } finally {
         setGenerationBusy(popup);
     }
@@ -467,7 +525,7 @@ function setGenerationBusy(popup, message = '') {
     const busy = Boolean(message);
     const generate = popup.querySelector('#persona-gen-generate');
     generate.textContent = message || 'Generate Persona';
-    for (const id of ['generate', 'create', 'discard', 'regenerate', 'token-budget', 'section', 'section-request']) {
+    for (const id of ['generate', 'create', 'discard', 'regenerate', 'token-budget', 'section', 'section-request', 'preview', 'variation-count', 'variation', 'avatar']) {
         popup.querySelector(`#persona-gen-${id}`).disabled = busy;
     }
     popup.querySelector('#persona-gen-result').readOnly = busy;
@@ -479,8 +537,43 @@ function showGenerationDraft(popup, draft) {
     result.dataset.characterName = draft.characterName;
     popup.querySelector('#persona-gen-result-label').textContent = `Persona draft for ${draft.characterName}`;
     popup.querySelector('#persona-gen-result-section').style.display = 'block';
+    renderVariations(popup, draft);
     updateSectionOptions(popup);
     void updateTokenStatus(popup);
+}
+
+function saveGenerationText(popup, draft) {
+    if (draft.variations) {
+        draft.variations = draft.variations.map((text, index) => index === draft.activeVariation ? draft.text : text);
+    }
+    saveDraft('generationDraft', draft);
+    renderVariationComparison(popup, draft);
+}
+
+function renderVariations(popup, draft) {
+    const select = popup.querySelector('#persona-gen-variation');
+    const alternatives = draft.variations ?? [];
+    select.replaceChildren(...alternatives.map((_, index) => new Option(`Proposal ${index + 1}`, String(index))));
+    select.value = String(draft.activeVariation ?? 0);
+    popup.querySelector('#persona-gen-variation-controls').hidden = alternatives.length < 2;
+    renderVariationComparison(popup, draft);
+}
+
+function renderVariationComparison(popup, draft) {
+    const container = popup.querySelector('#persona-gen-variation-comparison');
+    const alternatives = draft.variations ?? [];
+    container.replaceChildren();
+    if (alternatives.length < 2) return;
+
+    for (const [index, text] of alternatives.entries()) {
+        const panel = document.createElement('div');
+        const heading = document.createElement('strong');
+        const description = document.createElement('pre');
+        heading.textContent = `Proposal ${index + 1}`;
+        description.textContent = text;
+        panel.append(heading, description);
+        container.append(panel);
+    }
 }
 
 function findStructuredSection(text, tag) {
@@ -535,7 +628,7 @@ ${original}`;
         const text = original.slice(0, section.index) + section[1] + '\n' + replacement + '\n' + section[3]
             + original.slice(section.index + section[0].length);
         const updated = { ...draft, text };
-        saveDraft('generationDraft', updated);
+        saveGenerationText(popup, updated);
         showGenerationDraft(popup, updated);
     } catch (error) {
         console.error('Error regenerating persona section:', error);
@@ -852,7 +945,9 @@ async function handleSave(popup) {
     popup.dataset.saving = 'true';
     setGenerationBusy(popup, 'Saving...');
     try {
-        const avatarId = await createPersona(name, description);
+        const file = popup.querySelector('#persona-gen-avatar').files[0];
+        const avatar = file ? await readAvatarImage(file) : null;
+        const avatarId = await createPersona(name, description, avatar);
         const draft = getSettings().generationDraft;
         savePersonaRecord(avatarId, { sources: draft?.sources ?? [resultTextarea.dataset.characterName].filter(Boolean) });
         saveDraft('generationDraft', null);
@@ -866,14 +961,18 @@ async function handleSave(popup) {
     }
 }
 
-async function createPersona(name, description) {
-    const { SlashCommandParser } = SillyTavern.getContext();
+function placeholderAvatar() {
     const canvas = document.createElement('canvas');
     canvas.width = 10;
     canvas.height = 10;
     const drawing = canvas.getContext('2d');
     drawing.fillStyle = '#9b59b6';
     drawing.fillRect(0, 0, 10, 10);
+    return canvas.toDataURL('image/png');
+}
+
+async function createPersona(name, description, avatar = null, settings = {}) {
+    const { SlashCommandParser } = SillyTavern.getContext();
 
     // Pass literal values to the registered command, without parsing them as STscript.
     const avatarId = await SlashCommandParser.commands['persona-create'].callback({
@@ -881,10 +980,66 @@ async function createPersona(name, description) {
         description,
         select: 'false',
         avatarPromptResize: 'false',
-        avatar: canvas.toDataURL('image/png'),
+        avatar: avatar ?? placeholderAvatar(),
+        title: settings.title,
+        lorebook: settings.lorebook,
+        descriptionPosition: settings.position,
+        descriptionRole: settings.role,
+        descriptionDepth: settings.depth,
     });
     if (!avatarId) throw new Error('SillyTavern did not return a new persona ID.');
     return avatarId;
+}
+
+function isAvatarData(value) {
+    return typeof value === 'string' && /^data:image\/(?:png|jpeg|webp|gif);base64,[a-z0-9+/]+={0,2}$/i.test(value);
+}
+
+async function readAvatarImage(blob) {
+    if (!AVATAR_TYPES.split(',').includes(blob.type)) {
+        throw new Error('Choose a PNG, JPEG, WebP or GIF avatar.');
+    }
+    const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+    });
+    await validateAvatarImage(data);
+    return data;
+}
+
+async function validateAvatarImage(data) {
+    if (!isAvatarData(data)) throw new Error('Invalid avatar image.');
+    const comma = data.indexOf(',');
+    const header = atob(data.slice(comma + 1, comma + 17));
+    const type = data.slice(5, data.indexOf(';')).toLowerCase();
+    const signatures = {
+        'image/png': header.startsWith('\x89PNG\r\n\x1a\n'),
+        'image/jpeg': header.startsWith('\xff\xd8\xff'),
+        'image/webp': header.startsWith('RIFF') && header.slice(8, 12) === 'WEBP',
+        'image/gif': /^(GIF87a|GIF89a)/.test(header),
+    };
+    if (!signatures[type]) throw new Error('The avatar contents do not match its image format.');
+    const image = new Image();
+    image.src = data;
+    await image.decode();
+}
+
+async function getPersonaAvatar(avatarId) {
+    const response = await fetch(`User%20Avatars/${encodeURIComponent(avatarId)}`);
+    if (!response.ok) throw new Error(`Could not read the avatar for ${avatarId}.`);
+    return readAvatarImage(await response.blob());
+}
+
+function downloadJson(value, filename) {
+    const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function handleDownload(popup) {
@@ -904,13 +1059,7 @@ function handleDownload(popup) {
         avatar: ''
     };
 
-    const blob = new Blob([JSON.stringify(persona, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `persona_${characterName}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadJson(persona, `persona_${characterName}.json`);
 
     toastr.success('Persona downloaded as JSON!');
 }
@@ -966,15 +1115,46 @@ function buildEditPopupHTML(characters) {
                     <label for="persona-edit-source">Character of origin</label>
                     <select id="persona-edit-source"></select>
                     <label class="persona-generator-checkbox"><input id="persona-edit-favorites" type="checkbox"> Favorites only</label>
+                    <label for="persona-edit-tag-filter">Tag</label>
+                    <select id="persona-edit-tag-filter"></select>
+                    <label for="persona-edit-archive-filter">Library view</label>
+                    <select id="persona-edit-archive-filter">
+                        <option value="active">Active personas</option><option value="archived">Archived personas</option><option value="all">All personas</option>
+                    </select>
                     <label for="persona-edit-select">Select Persona</label>
                     <select id="persona-edit-select"></select>
                     <small id="persona-edit-empty" role="status" hidden>No personas match these filters.</small>
                     <label class="persona-generator-checkbox"><input id="persona-edit-favorite" type="checkbox"> Favorite selected persona</label>
+                    <label class="persona-generator-checkbox"><input id="persona-edit-archived" type="checkbox"> Archive selected persona</label>
+                    <label for="persona-edit-tags">Tags (comma-separated)</label>
+                    <input id="persona-edit-tags" type="text" placeholder="Fantasy, current campaign">
+                    <details>
+                        <summary>Library backup</summary>
+                        <button id="persona-edit-export-backup" class="persona-generator-btn secondary">Export Library JSON</button>
+                        <label for="persona-edit-backup-file">Preview an import</label>
+                        <input id="persona-edit-backup-file" type="file" accept=".json,application/json">
+                        <div id="persona-edit-import-controls" hidden>
+                            <label for="persona-edit-import-conflict">If the name already exists</label>
+                            <select id="persona-edit-import-conflict">
+                                <option value="skip">Skip that entry</option>
+                                <option value="copy">Import under a new name</option>
+                            </select>
+                            <ul id="persona-edit-import-preview"></ul>
+                            <button id="persona-edit-import-backup" class="persona-generator-btn primary">Import Library</button>
+                        </div>
+                        <small id="persona-edit-backup-status" role="status"></small>
+                    </details>
                 </div>
 
                 <div class="persona-generator-section">
                     <label>Current Description:</label>
                     <textarea id="persona-edit-current" rows="6" readonly></textarea>
+                    <details id="persona-edit-roleplay-controls">
+                        <summary>Roleplay reference card</summary>
+                        <label for="persona-edit-roleplay-card">Reference notes for this persona</label>
+                        <textarea id="persona-edit-roleplay-card" rows="6"></textarea>
+                        <button id="persona-edit-generate-card" class="persona-generator-btn secondary">Generate Reference Card</button>
+                    </details>
                     <label for="persona-edit-facts">Protected facts (one phrase per line)</label>
                     <textarea id="persona-edit-facts" rows="3" placeholder="Use the exact phrases that should be retained"></textarea>
                     <details id="persona-edit-history-controls" hidden>
@@ -999,7 +1179,9 @@ function buildEditPopupHTML(characters) {
                     <button id="persona-edit-generate" class="persona-generator-btn primary">
                         <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Changes
                     </button>
+                    <button id="persona-edit-preview" class="persona-generator-btn secondary" aria-expanded="false">Preview Prompt</button>
                 </div>
+                <pre id="persona-edit-prompt-preview" class="persona-generator-preview" hidden></pre>
 
                 <div class="persona-generator-section" id="persona-edit-result-section" style="display: none;">
                     <label>New Description:</label>
@@ -1042,6 +1224,11 @@ function setupEditPopupEventListeners(popup, personas, personaDescriptions, char
     const favorite = fields('favorite');
     const search = fields('search');
     const facts = fields('facts');
+    const tags = fields('tags');
+    const tagFilter = fields('tag-filter');
+    const archived = fields('archived');
+    const archiveFilter = fields('archive-filter');
+    const card = fields('roleplay-card');
 
     function showSelection() {
         const avatarId = select.value;
@@ -1053,7 +1240,16 @@ function setupEditPopupEventListeners(popup, personas, personaDescriptions, char
         fields('target').value = '';
         facts.value = (record.facts ?? []).join('\n');
         favorite.checked = Boolean(record.favorite);
+        archived.checked = Boolean(record.archived);
+        tags.value = (record.tags ?? []).join(', ');
+        card.value = record.roleplayCard ?? '';
+        fields('roleplay-controls').hidden = !avatarId;
+        fields('prompt-preview').hidden = true;
+        fields('preview').setAttribute('aria-expanded', 'false');
         favorite.disabled = !avatarId;
+        archived.disabled = !avatarId;
+        tags.disabled = !avatarId;
+        fields('preview').disabled = !avatarId;
         facts.disabled = !avatarId;
         generateBtn.disabled = !avatarId;
         fields('empty').hidden = Boolean(avatarId);
@@ -1071,18 +1267,21 @@ function setupEditPopupEventListeners(popup, personas, personaDescriptions, char
         const source = sourceFilter.value;
         sourceFilter.replaceChildren(new Option('All characters', ''), ...sources.map(name => new Option(name, name)));
         if (sources.includes(source)) sourceFilter.value = source;
+        refreshTagOptions();
         const filtered = Object.entries(personas).filter(([id, name]) => {
             const record = personaRecord(id);
             const text = `${name} ${personaDescriptions[id]?.description ?? ''}`.toLocaleLowerCase();
             return text.includes(query) && (!favorites.checked || record.favorite)
-                && (!sourceFilter.value || record.sources?.includes(sourceFilter.value));
+                && (!sourceFilter.value || record.sources?.includes(sourceFilter.value))
+                && (!tagFilter.value || record.tags?.includes(tagFilter.value))
+                && (archiveFilter.value === 'all' || Boolean(record.archived) === (archiveFilter.value === 'archived'));
         });
         select.replaceChildren(...filtered.map(([id, name]) => new Option(name, id)));
         if (filtered.some(([id]) => id === preferred)) select.value = preferred;
         showSelection();
     }
 
-    for (const field of [search, sourceFilter, favorites]) {
+    for (const field of [search, sourceFilter, favorites, tagFilter, archiveFilter]) {
         field.addEventListener('input', () => filterPersonas());
     }
     select.addEventListener('change', showSelection);
@@ -1091,6 +1290,37 @@ function setupEditPopupEventListeners(popup, personas, personaDescriptions, char
         savePersonaRecord(select.value, { favorite: favorite.checked });
         if (favorites.checked) filterPersonas();
     });
+    archived.addEventListener('change', () => {
+        if (!select.value) return;
+        savePersonaRecord(select.value, { archived: archived.checked });
+        filterPersonas();
+    });
+    tags.addEventListener('change', () => {
+        if (!select.value) return;
+        savePersonaRecord(select.value, { tags: [...new Set(tags.value.split(',').map(tag => tag.trim()).filter(Boolean))] });
+        if (tagFilter.value) filterPersonas();
+        else refreshTagOptions();
+    });
+
+    function refreshTagOptions() {
+        const allTags = [...new Set(Object.keys(personas).flatMap(id => personaRecord(id).tags ?? []))].sort();
+        const tag = tagFilter.value;
+        tagFilter.replaceChildren(new Option('All tags', ''), ...allTags.map(value => new Option(value, value)));
+        if (allTags.includes(tag)) tagFilter.value = tag;
+    }
+
+    card.addEventListener('input', () => {
+        if (select.value) savePersonaRecord(select.value, { roleplayCard: card.value });
+    });
+    fields('generate-card').addEventListener('click', () => generateRoleplayCard(popup, personas, personaDescriptions));
+    fields('preview').addEventListener('click', () => {
+        const input = readEditInput(popup, personas, personaDescriptions, characters);
+        if (input) showPromptPreview(popup, 'edit', input.prompt);
+    });
+    fields('copy-avatar-mode').addEventListener('change', () => {
+        fields('copy-avatar').hidden = fields('copy-avatar-mode').value !== 'custom';
+    });
+    setupLibraryBackup(popup, filterPersonas);
     facts.addEventListener('input', () => {
         if (!select.value) return;
         savePersonaRecord(select.value, { facts: protectedFacts(facts.value) });
@@ -1131,7 +1361,9 @@ function setupEditPopupEventListeners(popup, personas, personaDescriptions, char
             if (id === 'result') updateEditReview(popup);
         });
     }
-    filterPersonas(getSettings().editDraft?.avatarId);
+    const savedAvatarId = getSettings().editDraft?.avatarId;
+    if (savedAvatarId && personaRecord(savedAvatarId).archived) archiveFilter.value = 'archived';
+    filterPersonas(savedAvatarId);
 
     popup.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') close();
@@ -1188,20 +1420,29 @@ function hideEditDraft(popup) {
     result.value = '';
     delete result.dataset.avatarId;
     popup.querySelector('#persona-edit-copy-name').value = '';
+    popup.querySelector('#persona-edit-copy-avatar').value = '';
+    popup.querySelector('#persona-edit-copy-avatar').hidden = true;
+    popup.querySelector('#persona-edit-copy-avatar-mode').value = 'original';
     popup.querySelector('#persona-edit-result-section').style.display = 'none';
 }
 
 function setEditBusy(popup, busy) {
-    for (const id of ['generate', 'select', 'save', 'save-copy', 'discard', 'target', 'preview-history', 'search', 'source', 'favorites', 'favorite']) {
+    for (const id of ['generate', 'select', 'save', 'save-copy', 'discard', 'target', 'preview-history', 'search', 'source', 'favorites', 'favorite', 'archived', 'tag-filter', 'archive-filter', 'preview', 'generate-card', 'copy-avatar-mode', 'copy-avatar', 'export-backup', 'backup-file', 'import-conflict']) {
         popup.querySelector(`#persona-edit-${id}`).disabled = busy;
     }
-    for (const id of ['result', 'request', 'copy-name', 'facts']) {
+    for (const id of ['result', 'request', 'copy-name', 'facts', 'tags', 'roleplay-card']) {
         popup.querySelector(`#persona-edit-${id}`).readOnly = busy;
     }
-    if (!busy) updateEditReview(popup);
+    if (!busy) {
+        const hasSelection = Boolean(popup.querySelector('#persona-edit-select').value);
+        for (const id of ['generate', 'favorite', 'archived', 'preview']) {
+            popup.querySelector(`#persona-edit-${id}`).disabled = !hasSelection;
+        }
+        updateEditReview(popup);
+    }
 }
 
-async function handleEditGenerate(popup, personas, personaDescriptions, characters) {
+function readEditInput(popup, personas, personaDescriptions, characters) {
     const select = popup.querySelector('#persona-edit-select');
     const requestTextarea = popup.querySelector('#persona-edit-request');
     const generateBtn = popup.querySelector('#persona-edit-generate');
@@ -1225,13 +1466,25 @@ async function handleEditGenerate(popup, personas, personaDescriptions, characte
         return;
     }
 
+    return {
+        avatarId, personaName, userRequest, target,
+        prompt: buildEditPrompt(personaName, currentDescription, userRequest, facts, target),
+    };
+}
+
+async function handleEditGenerate(popup, personas, personaDescriptions, characters) {
+    const generateBtn = popup.querySelector('#persona-edit-generate');
+    if (generateBtn.disabled) return;
+    const input = readEditInput(popup, personas, personaDescriptions, characters);
+    if (!input) return;
+    const { avatarId, personaName, userRequest, target, prompt } = input;
+
     setEditBusy(popup, true);
     const initialLabel = generateBtn.innerHTML;
     generateBtn.textContent = 'Generating...';
     try {
-        const prompt = buildEditPrompt(personaName, currentDescription, userRequest, facts, target);
         const text = await generatePersonaText(prompt);
-        if (!popup.isConnected || select.value !== avatarId) return;
+        if (!popup.isConnected || popup.querySelector('#persona-edit-select').value !== avatarId) return;
 
         const previous = getSettings().editDraft;
         const copyName = previous?.avatarId === avatarId ? previous.copyName : `${personaName} (Copy)`;
@@ -1310,8 +1563,15 @@ async function handleEditSave(popup, asCopy = false) {
     setEditBusy(popup, true);
     try {
         if (asCopy) {
-            const newId = await createPersona(copyName, description);
-            savePersonaRecord(newId, { facts, sources: draft?.targetSource ? [draft.targetSource] : record.sources ?? [] });
+            const mode = popup.querySelector('#persona-edit-copy-avatar-mode').value;
+            const file = popup.querySelector('#persona-edit-copy-avatar').files[0];
+            if (mode === 'custom' && !file) {
+                toastr.warning('Choose an avatar image for the copy.');
+                return;
+            }
+            const avatar = mode === 'original' ? await getPersonaAvatar(avatarId) : mode === 'custom' ? await readAvatarImage(file) : null;
+            const newId = await createPersona(copyName, description, avatar);
+            savePersonaRecord(newId, { facts, tags: record.tags ?? [], sources: draft?.targetSource ? [draft.targetSource] : record.sources ?? [] });
             return true;
         }
 
@@ -1351,6 +1611,221 @@ async function handleEditSave(popup, asCopy = false) {
         toastr.error(asCopy ? 'Failed to save a new persona.' : 'Failed to save persona changes.');
     } finally {
         delete popup.dataset.saving;
+        setEditBusy(popup, false);
+    }
+}
+
+function backupPersonaSettings(source) {
+    const settings = {};
+    for (const key of ['title', 'lorebook']) {
+        if (typeof source?.[key] === 'string') settings[key] = source[key];
+    }
+    for (const key of ['position', 'role', 'depth']) {
+        if (Number.isInteger(source?.[key])) settings[key] = source[key];
+    }
+    return settings;
+}
+
+function backupLibraryRecord(source) {
+    const record = {};
+    for (const key of ['facts', 'sources', 'tags']) {
+        if (Array.isArray(source?.[key])) {
+            record[key] = [...new Set(source[key].filter(value => typeof value === 'string' && value.trim()))];
+        }
+    }
+    for (const key of ['favorite', 'archived']) {
+        if (typeof source?.[key] === 'boolean') record[key] = source[key];
+    }
+    if (typeof source?.roleplayCard === 'string') record.roleplayCard = source.roleplayCard;
+    if (Array.isArray(source?.history)) {
+        record.history = source.history
+            .filter(version => typeof version?.text === 'string' && Number.isFinite(version.timestamp))
+            .slice(0, 10)
+            .map(({ text, timestamp }) => ({ text, timestamp }));
+    }
+    return record;
+}
+
+function parseLibraryBackup(value) {
+    if (value?.format !== LIBRARY_BACKUP_FORMAT || value.version !== 1 || !Array.isArray(value.personas)) {
+        throw new Error('Choose a Persona Generator library backup.');
+    }
+    return value.personas.map((entry, index) => {
+        if (typeof entry?.name !== 'string' || !entry.name.trim()
+            || typeof entry.description !== 'string' || !isAvatarData(entry.avatar)) {
+            throw new Error(`Invalid persona entry at position ${index + 1}.`);
+        }
+        return {
+            name: entry.name.trim(),
+            description: entry.description,
+            avatar: entry.avatar,
+            settings: backupPersonaSettings(entry.settings),
+            record: backupLibraryRecord(entry.record),
+        };
+    });
+}
+
+async function buildLibraryBackup() {
+    const { powerUserSettings } = SillyTavern.getContext();
+    const entries = [];
+    for (const [avatarId, name] of Object.entries(powerUserSettings.personas)) {
+        const descriptor = powerUserSettings.persona_descriptions?.[avatarId];
+        const entry = {
+            name,
+            description: descriptor?.description ?? '',
+            avatar: await getPersonaAvatar(avatarId),
+            settings: backupPersonaSettings(descriptor),
+            record: backupLibraryRecord(personaRecord(avatarId)),
+        };
+        entries.push(entry);
+    }
+    return { format: LIBRARY_BACKUP_FORMAT, version: 1, personas: entries };
+}
+
+function importPersonaName(name, used, policy) {
+    const normalize = value => value.trim().normalize('NFC').toLowerCase();
+    if (!used.has(normalize(name))) {
+        used.add(normalize(name));
+        return name;
+    }
+    if (policy === 'skip') return null;
+
+    let number = 1;
+    let candidate;
+    do {
+        candidate = `${name} (Imported ${number++})`;
+    } while (used.has(normalize(candidate)));
+    used.add(normalize(candidate));
+    return candidate;
+}
+
+function setupLibraryBackup(popup, refreshLibrary) {
+    const fields = id => popup.querySelector(`#persona-edit-${id}`);
+    const file = fields('backup-file');
+    const exportButton = fields('export-backup');
+    const importButton = fields('import-backup');
+    const policy = fields('import-conflict');
+    const controls = fields('import-controls');
+    const status = fields('backup-status');
+    const preview = fields('import-preview');
+    let entries = [];
+    let imported = new Map();
+
+    function planImport() {
+        const { powerUserSettings } = SillyTavern.getContext();
+        const used = new Set(Object.values(powerUserSettings.personas).map(name => name.trim().normalize('NFC').toLowerCase()));
+        return entries.map((entry, index) => imported.get(index) ?? importPersonaName(entry.name, used, policy.value));
+    }
+
+    function showPreview() {
+        const plan = planImport();
+        preview.replaceChildren(...entries.map((entry, index) => {
+            const row = document.createElement('li');
+            const name = plan[index];
+            row.textContent = imported.has(index) ? `${name} (imported)`
+                : !name ? `${entry.name} (skip: name already exists)`
+                    : name === entry.name ? `${name} (add)` : `${entry.name} → ${name}`;
+            return row;
+        }));
+        importButton.disabled = plan.every((name, index) => !name || imported.has(index));
+    }
+
+    file.addEventListener('change', async () => {
+        const selected = file.files[0];
+        entries = [];
+        imported = new Map();
+        controls.hidden = true;
+        importButton.disabled = true;
+        status.textContent = '';
+        if (!selected) return;
+        try {
+            const parsed = parseLibraryBackup(JSON.parse(await selected.text()));
+            if (!popup.isConnected || file.files[0] !== selected) return;
+            entries = parsed;
+            controls.hidden = entries.length === 0;
+            showPreview();
+            status.textContent = entries.length ? `${entries.length} personas ready to review.` : 'This backup is empty.';
+        } catch (error) {
+            if (!popup.isConnected || file.files[0] !== selected) return;
+            status.textContent = error instanceof SyntaxError ? 'The selected file is not valid JSON.' : error.message;
+        }
+    });
+    policy.addEventListener('change', showPreview);
+
+    exportButton.addEventListener('click', async () => {
+        setEditBusy(popup, true);
+        status.textContent = 'Preparing backup with avatars…';
+        try {
+            const backup = await buildLibraryBackup();
+            if (!popup.isConnected) return;
+            downloadJson(backup, 'persona-generator-library.json');
+            status.textContent = `Exported ${backup.personas.length} personas.`;
+        } catch (error) {
+            status.textContent = `Backup failed: ${error.message}`;
+        } finally {
+            setEditBusy(popup, false);
+            showPreview();
+        }
+    });
+
+    importButton.addEventListener('click', async () => {
+        if (importButton.disabled || exportButton.disabled) return;
+        const plan = planImport();
+        importButton.disabled = true;
+        const failures = [];
+        let added = 0;
+        popup.dataset.saving = 'true';
+        setEditBusy(popup, true);
+        status.textContent = 'Importing personas…';
+        try {
+            for (const [index, name] of plan.entries()) {
+                if (!name || imported.has(index)) continue;
+                const entry = entries[index];
+                try {
+                    await validateAvatarImage(entry.avatar);
+                    const avatarId = await createPersona(name, entry.description, entry.avatar, entry.settings);
+                    savePersonaRecord(avatarId, entry.record);
+                    imported.set(index, name);
+                    added++;
+                } catch (error) {
+                    console.error('Persona import failed:', error);
+                    failures.push(name);
+                }
+            }
+            refreshLibrary();
+            const skipped = plan.filter(name => !name).length;
+            status.textContent = `Imported ${added}. Skipped ${skipped} due to name conflicts.`
+                + (failures.length ? ` Failed: ${failures.join(', ')}. You can retry those entries.` : '');
+        } finally {
+            delete popup.dataset.saving;
+            setEditBusy(popup, false);
+            showPreview();
+        }
+    });
+}
+
+async function generateRoleplayCard(popup, personas, personaDescriptions) {
+    const avatarId = popup.querySelector('#persona-edit-select').value;
+    const input = popup.querySelector('#persona-edit-roleplay-card');
+    const button = popup.querySelector('#persona-edit-generate-card');
+    if (button.disabled || !Object.hasOwn(personas, avatarId)) return;
+    const description = personaDescriptions[avatarId]?.description?.trim();
+    if (!description) {
+        toastr.warning('Add a description to this persona before generating a reference card.');
+        return;
+    }
+
+    setEditBusy(popup, true);
+    try {
+        const prompt = `Create a short roleplay reference card for ${personas[avatarId]}. Include voice and mannerisms, current goals, and two example replies. Use the facts in the persona description. Return only the card.\n\n${description}`;
+        const text = await generatePersonaText(prompt, 350);
+        if (!popup.isConnected) return;
+        input.value = text;
+        savePersonaRecord(avatarId, { roleplayCard: text });
+    } catch (error) {
+        console.error('Error generating roleplay reference card:', error);
+        toastr.error('Could not generate the reference card.');
+    } finally {
         setEditBusy(popup, false);
     }
 }

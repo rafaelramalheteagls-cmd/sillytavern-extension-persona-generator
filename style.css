@@ -587,3 +587,26 @@
     color: #ff9eaf;
     overflow-wrap: anywhere;
 }
+
+.persona-generator-preview,
+.persona-generator-variation-comparison pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 240px;
+    overflow: auto;
+    padding: 10px;
+    background: #0d1b2a;
+    border-radius: 6px;
+}
+
+.persona-generator-variation-comparison {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+    gap: 8px;
+}
+
+#persona-edit-import-preview {
+    max-height: 180px;
+    overflow: auto;
+    overflow-wrap: anywhere;
+}
