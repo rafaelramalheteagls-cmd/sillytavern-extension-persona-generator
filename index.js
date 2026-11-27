@@ -1,3 +1,5 @@
+import { fixToastrForDialogs } from '../../../popup.js';
+
 /**
  * SillyTavern Persona Generator Extension
  * Generate personas from character cards using AI
@@ -207,20 +209,67 @@ function saveSettings() {
     updateSettingsPanel();
 }
 
+const popupViewportListeners = new WeakMap();
+
+function mountPersonaPopup(id, html) {
+    const dialog = document.createElement('dialog');
+    const isModal = typeof dialog.showModal === 'function';
+    const popup = isModal ? dialog : document.createElement('div');
+    popup.id = id;
+    popup.className = 'persona-generator-popup';
+    popup.innerHTML = html;
+    const heading = popup.querySelector('h2');
+    heading.id = `${id}-title`;
+    popup.setAttribute('aria-labelledby', heading.id);
+    if (!isModal) popup.setAttribute('role', 'dialog');
+    popup.querySelector('.persona-generator-close').setAttribute('autofocus', '');
+    popup.addEventListener('cancel', event => {
+        event.preventDefault();
+        if (!popup.dataset.saving) closePersonaPopup(popup);
+    });
+
+    const viewport = window.visualViewport;
+    if (viewport) {
+        const layout = () => {
+            if (!viewport.width || !viewport.height) return;
+            popup.style.setProperty('--persona-viewport-top', `${viewport.offsetTop}px`);
+            popup.style.setProperty('--persona-viewport-left', `${viewport.offsetLeft}px`);
+            popup.style.setProperty('--persona-viewport-width', `${viewport.width}px`);
+            popup.style.setProperty('--persona-viewport-height', `${viewport.height}px`);
+        };
+        const controller = new AbortController();
+        popupViewportListeners.set(popup, controller);
+        viewport.addEventListener('resize', layout, { signal: controller.signal });
+        viewport.addEventListener('scroll', layout, { signal: controller.signal });
+        layout();
+    }
+
+    document.body.append(popup);
+    if (isModal) {
+        dialog.showModal();
+        fixToastrForDialogs();
+    }
+    return popup;
+}
+
+function closePersonaPopup(popup) {
+    popupViewportListeners.get(popup)?.abort();
+    popupViewportListeners.delete(popup);
+    if (popup.open) {
+        popup.close();
+        fixToastrForDialogs();
+    }
+    popup.remove();
+}
+
 function openPersonaGeneratorPopup() {
     const existing = document.getElementById('persona-generator-popup');
     if (existing?.dataset.saving) return;
-    if (existing) existing.remove();
+    if (existing) closePersonaPopup(existing);
 
     const { characters, characterId } = SillyTavern.getContext();
     const settings = getSettings();
-
-    const popup = document.createElement('div');
-    popup.id = 'persona-generator-popup';
-    popup.className = 'persona-generator-popup';
-    popup.innerHTML = buildPopupHTML(characters, characterId, settings);
-
-    document.body.appendChild(popup);
+    const popup = mountPersonaPopup('persona-generator-popup', buildPopupHTML(characters, characterId, settings));
     setupPopupEventListeners(popup, characters, settings);
 }
 
@@ -377,7 +426,7 @@ function setupPopupEventListeners(popup, characters, settings) {
     const copyBtn = popup.querySelector('#persona-gen-copy');
 
     const close = () => {
-        if (!popup.dataset.saving) popup.remove();
+        if (!popup.dataset.saving) closePersonaPopup(popup);
     };
     overlay.addEventListener('click', close);
     closeBtn.addEventListener('click', close);
@@ -422,7 +471,7 @@ function setupPopupEventListeners(popup, characters, settings) {
     if (settings.generationDraft) showGenerationDraft(popup, settings.generationDraft);
 
     popup.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') close();
+        if (e.key === 'Escape' && !popup.open) close();
     });
 }
 
@@ -954,7 +1003,7 @@ async function handleSave(popup) {
         const draft = getSettings().generationDraft;
         savePersonaRecord(avatarId, { sources: draft?.sources ?? [resultTextarea.dataset.characterName].filter(Boolean) });
         saveDraft('generationDraft', null);
-        popup.remove();
+        closePersonaPopup(popup);
     } catch (error) {
         console.error('Error creating persona:', error);
         toastr.error('Failed to create persona in SillyTavern. Check console for details.');
@@ -1087,18 +1136,13 @@ function handleCopy(popup) {
 function openEditPersonaPopup() {
     const existing = document.getElementById('persona-edit-popup');
     if (existing?.dataset.saving) return;
-    if (existing) existing.remove();
+    if (existing) closePersonaPopup(existing);
 
     const { powerUserSettings, characters } = SillyTavern.getContext();
     const personas = powerUserSettings?.personas || {};
     const personaDescriptions = powerUserSettings?.persona_descriptions || {};
 
-    const popup = document.createElement('div');
-    popup.id = 'persona-edit-popup';
-    popup.className = 'persona-generator-popup';
-    popup.innerHTML = buildEditPopupHTML(characters);
-
-    document.body.appendChild(popup);
+    const popup = mountPersonaPopup('persona-edit-popup', buildEditPopupHTML(characters));
     setupEditPopupEventListeners(popup, personas, personaDescriptions, characters);
 }
 
@@ -1189,6 +1233,24 @@ function buildEditPopupHTML(characters) {
                 <div class="persona-generator-section" id="persona-edit-result-section" style="display: none;">
                     <label>New Description:</label>
                     <textarea id="persona-edit-result" rows="8"></textarea>
+                    <div id="persona-edit-fact-status" role="status"></div>
+                    <small id="persona-edit-result-mode" role="status"></small>
+                    <details id="persona-edit-comparison">
+                        <summary>Compare changes</summary>
+                        <label>Removed lines</label>
+                        <pre id="persona-edit-removed"></pre>
+                        <label>Added lines</label>
+                        <pre id="persona-edit-added"></pre>
+                    </details>
+                    <label for="persona-edit-copy-name">Name for a new copy</label>
+                    <input id="persona-edit-copy-name" type="text">
+                    <label for="persona-edit-copy-avatar-mode">Avatar for the copy</label>
+                    <select id="persona-edit-copy-avatar-mode">
+                        <option value="original">Use original avatar</option>
+                        <option value="custom">Choose an image</option>
+                        <option value="default">Use placeholder avatar</option>
+                    </select>
+                    <input id="persona-edit-copy-avatar" aria-label="Custom avatar for the copy" type="file" accept="${AVATAR_TYPES}" hidden>
                     <div class="persona-generator-result-actions">
                         <button id="persona-edit-save" class="persona-generator-btn primary">
                             <i class="fa-solid fa-save"></i> <span>Save Changes</span>
@@ -1215,7 +1277,7 @@ function setupEditPopupEventListeners(popup, personas, personaDescriptions, char
     const copyBtn = popup.querySelector('#persona-edit-copy');
 
     const close = () => {
-        if (!popup.dataset.saving) popup.remove();
+        if (!popup.dataset.saving) closePersonaPopup(popup);
     };
     overlay.addEventListener('click', close);
     closeBtn.addEventListener('click', close);
@@ -1369,7 +1431,7 @@ function setupEditPopupEventListeners(popup, personas, personaDescriptions, char
     filterPersonas(savedAvatarId);
 
     popup.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') close();
+        if (e.key === 'Escape' && !popup.open) close();
     });
 }
 
@@ -1852,14 +1914,9 @@ function handleEditCopy(popup) {
 
 function openPromptEditor() {
     const existing = document.getElementById('persona-prompt-editor-popup');
-    if (existing) existing.remove();
+    if (existing) closePersonaPopup(existing);
 
-    const popup = document.createElement('div');
-    popup.id = 'persona-prompt-editor-popup';
-    popup.className = 'persona-generator-popup';
-    popup.innerHTML = buildPromptEditorHTML();
-
-    document.body.appendChild(popup);
+    const popup = mountPersonaPopup('persona-prompt-editor-popup', buildPromptEditorHTML());
     setupPromptEditorEventListeners(popup);
 }
 
@@ -1942,8 +1999,8 @@ function setupPromptEditorEventListeners(popup) {
     const saveBtn = popup.querySelector('#prompt-editor-save');
     const cancelBtn = popup.querySelector('#prompt-editor-cancel');
 
-    overlay.addEventListener('click', () => popup.remove());
-    closeBtn.addEventListener('click', () => popup.remove());
+    overlay.addEventListener('click', () => closePersonaPopup(popup));
+    closeBtn.addEventListener('click', () => closePersonaPopup(popup));
     
     addBtn.addEventListener('click', () => {
         showPromptEditor(popup, null, -1);
@@ -1984,7 +2041,7 @@ function setupPromptEditorEventListeners(popup) {
     });
 
     popup.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') popup.remove();
+        if (e.key === 'Escape' && !popup.open) closePersonaPopup(popup);
     });
 }
 
@@ -2173,6 +2230,7 @@ async function addExtensionSettings() {
 
     updateSettingsPanel();
     $panel.find('#persona_gen_open').on('click', openPersonaGeneratorPopup);
+    $panel.find('#persona_gen_edit').on('click', openEditPersonaPopup);
     $panel.find('#persona_gen_edit_prompts_btn').on('click', openPromptEditor);
 }
 

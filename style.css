@@ -4,13 +4,29 @@
 
 .persona-generator-popup {
     position: fixed;
-    inset: 0;
+    inset: var(--persona-viewport-top, 0) auto auto var(--persona-viewport-left, 0);
+    width: var(--persona-viewport-width, 100%);
+    height: var(--persona-viewport-height, 100%);
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
     z-index: 10000;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 10px;
     box-sizing: border-box;
+}
+
+dialog.persona-generator-popup:not([open]) {
+    display: none;
+}
+
+dialog.persona-generator-popup::backdrop {
+    background: transparent;
 }
 
 .persona-generator-overlay {
