@@ -1,4 +1,5 @@
 import { fixToastrForDialogs } from '../../../popup.js';
+import { createGenerationParameters } from '../../../openai.js';
 
 /**
  * SillyTavern Persona Generator Extension
@@ -63,11 +64,23 @@ function applyTokenBudget(prompt, tokenBudget) {
 }
 
 async function generatePersonaText(prompt, tokenBudget = null, systemPrompt = '') {
-    const result = await SillyTavern.getContext().generateRaw({
-        prompt: applyTokenBudget(prompt, tokenBudget),
-        responseLength: tokenBudget,
-        systemPrompt,
-    });
+    const context = SillyTavern.getContext();
+    const content = applyTokenBudget(prompt, tokenBudget);
+    let result;
+    if (context.mainApi === 'openai') {
+        // Build the request with the active connection settings, without chat prompt hooks.
+        const settings = { ...context.chatCompletionSettings };
+        if (tokenBudget) settings.openai_max_tokens = tokenBudget;
+        const messages = [];
+        if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+        messages.push({ role: 'user', content });
+        const model = context.getChatCompletionModel(settings);
+        const { generate_data } = await createGenerationParameters(settings, model, 'quiet', messages);
+        const response = await context.ChatCompletionService.sendRequest(generate_data);
+        result = response.content;
+    } else {
+        result = await context.generateRaw({ prompt: content, responseLength: tokenBudget, systemPrompt });
+    }
     if (typeof result !== 'string' || !result.trim()) {
         throw new Error('The provider returned an empty persona description.');
     }
@@ -116,7 +129,7 @@ function personaResponse(text, style, cards) {
     const description = (wrapped?.[1] ?? candidate).trim();
     const normalize = value => value.trim().replace(/\s+/g, ' ').toLowerCase();
     const normalized = normalize(description);
-    if (!description || /^(?:new (?:chat|conversation|session) (?:started|begun)|tell me the setting)/i.test(description)
+    if (!description || /^(?:(?:sure|okay|ok)[\s,!.:—–-]+)?(?:new (?:chat|conversation|session) (?:started|begun)|tell me the setting)/i.test(description)
         || cards.some(card => typeof card.first_mes === 'string' && normalize(card.first_mes) === normalized)) {
         return null;
     }
